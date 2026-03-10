@@ -42,7 +42,7 @@ class BotAI {
             case 'easy':
                 return this._easyStrategy(validMoves);
             case 'hard':
-                return this._hardStrategy(validMoves, hand, leftEnd, rightEnd, playerOrder, botId);
+                return this._hardStrategy(validMoves, hand, leftEnd, rightEnd, board, playerOrder, botId);
             case 'normal':
             default:
                 return this._normalStrategy(validMoves, hand);
@@ -138,13 +138,38 @@ class BotAI {
     }
 
     /**
+     * Helper to count how many times a specific number (suit) is visible
+     * between the board and the bot's own hand. 
+     * If this returns 7, that number is "Dead" and will permanently block that end.
+     */
+    _countSuitVisible(suit, board, hand) {
+        let count = 0;
+        // Count in hand
+        for (const b of hand) {
+            if (b.left === suit) count++;
+            if (b.right === suit && b.left !== suit) count++;
+        }
+        // Count on board
+        for (const b of board) {
+            if (b.left === suit) count++;
+            if (b.right === suit && b.left !== suit) count++;
+        }
+        return count;
+    }
+
+    /**
      * HARD: Defensive + Offensive strategy
      * 1. Track opponent passed numbers — try to force those ends
      * 2. Maintain number diversity in hand
      * 3. Play high-value tiles first to reduce risk
      * 4. Block opponents by setting ends to numbers they've passed on
+     * 5. Block undercutting: if a move creates a dead end, do it ONLY if our hand value is low. 
      */
-    _hardStrategy(validMoves, hand, leftEnd, rightEnd, playerOrder, botId) {
+    _hardStrategy(validMoves, hand, leftEnd, rightEnd, board, playerOrder, botId) {
+        // Calculate our current hand sum
+        let myHandSum = 0;
+        hand.forEach(b => myHandSum += b.left + b.right);
+
         const scored = validMoves.map(m => {
             let score = 0;
             const boneValue = m.bone.left + m.bone.right;
@@ -169,7 +194,22 @@ class BotAI {
                 }
             }
 
-            // 4. Maintain diversity — prefer playing numbers we have many of
+            // 4. Undercutting & Dead Tiles (Case B & C)
+            // If playing this creates a Dead Tile setup, we are forcing a block.
+            const visibleCount = this._countSuitVisible(playedNumber, board, hand);
+            
+            // It's a dead end if we place the 7th tile of that suit
+            if (visibleCount === 7) {
+                if (myHandSum < 15) {
+                    // We have very low pips. Violently enforce the block!
+                    score += 100; // Undercut priority
+                } else {
+                    // We hold heavy tiles. We DO NOT want the game to block.
+                    score -= 50; // Avoid creating blocks we might lose
+                }
+            }
+
+            // 5. Maintain diversity — prefer playing numbers we have many of
             const numberCounts = {};
             for (const b of hand) {
                 numberCounts[b.left] = (numberCounts[b.left] || 0) + 1;

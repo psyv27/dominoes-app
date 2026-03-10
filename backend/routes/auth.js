@@ -23,7 +23,7 @@ router.post('/register', async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, salt);
 
         const result = await db.query(
-            'INSERT INTO Users (username, password_hash, nickname) VALUES ($1, $2, $3) RETURNING id, username, nickname, xp, rank_level',
+            'INSERT INTO Users (username, password_hash, nickname) VALUES ($1, $2, $3) RETURNING id, username, nickname, avatar, xp, rank_level',
             [username, hashedPassword, nickname]
         );
 
@@ -65,6 +65,7 @@ router.post('/login', async (req, res) => {
                 id: user.id,
                 username: user.username,
                 nickname: user.nickname,
+                avatar: user.avatar,
                 xp: user.xp,
                 rank_level: user.rank_level,
                 total_wins: user.total_wins,
@@ -86,7 +87,7 @@ router.get('/me', async (req, res) => {
     const token = authHeader.split(' ')[1];
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const result = await db.query('SELECT id, username, nickname, xp, rank_level, total_wins, total_games FROM Users WHERE id = $1', [decoded.id]);
+        const result = await db.query('SELECT id, username, nickname, avatar, xp, rank_level, total_wins, total_games FROM Users WHERE id = $1', [decoded.id]);
         
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'User not found' });
@@ -95,6 +96,47 @@ router.get('/me', async (req, res) => {
         res.json({ user: result.rows[0] });
     } catch (err) {
         res.status(401).json({ error: 'Invalid token' });
+    }
+});
+
+router.put('/profile', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'No token provided' });
+    }
+
+    const { nickname, password, avatar } = req.body;
+
+    const token = authHeader.split(' ')[1];
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const userCheck = await db.query('SELECT * FROM Users WHERE id = $1', [decoded.id]);
+        
+        if (userCheck.rows.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const user = userCheck.rows[0];
+        let result;
+
+        if (password) {
+            const salt = await bcrypt.genSalt(10);
+            const hashedPassword = await bcrypt.hash(password, salt);
+            result = await db.query(
+                'UPDATE Users SET nickname = $1, password_hash = $2, avatar = $3 WHERE id = $4 RETURNING id, username, nickname, avatar, xp, rank_level, total_wins, total_games',
+                [nickname || user.nickname, hashedPassword, avatar || user.avatar, decoded.id]
+            );
+        } else {
+            result = await db.query(
+                'UPDATE Users SET nickname = $1, avatar = $2 WHERE id = $3 RETURNING id, username, nickname, avatar, xp, rank_level, total_wins, total_games',
+                [nickname || user.nickname, avatar || user.avatar, decoded.id]
+            );
+        }
+
+        res.json({ user: result.rows[0] });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Server error / Invalid token' });
     }
 });
 
