@@ -12,7 +12,7 @@ export const AuthProvider = ({ children }) => {
         // Here we could fetch /me from the backend if we have a token
         const token = localStorage.getItem('token');
         const storedUser = localStorage.getItem('user');
-        
+
         if (token && storedUser) {
             setUser(JSON.parse(storedUser));
         }

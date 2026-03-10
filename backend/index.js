@@ -2,6 +2,8 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
 
 const authRoutes = require('./routes/auth');
@@ -9,10 +11,23 @@ const RoomManager = require('./RoomManager');
 const BotAI = require('./BotAI');
 
 const app = express();
-app.use(cors());
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
+}));
 app.use(express.json());
 
 app.use('/auth', authRoutes);
+
+// Serve frontend static files in production (when frontend/dist exists)
+const frontendDist = path.join(__dirname, '..', 'frontend', 'dist');
+if (fs.existsSync(frontendDist)) {
+    app.use(express.static(frontendDist));
+    app.get('*', (req, res) => {
+        res.sendFile(path.join(frontendDist, 'index.html'));
+    });
+}
 
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -268,7 +283,7 @@ io.on('connection', (socket) => {
 
         // Add bots
         roomManager.addBots(roomId, settings.botCount, settings.botDifficulty);
-        
+
         // Create bot AI instance
         botInstances[roomId] = new BotAI(settings.botDifficulty);
 
