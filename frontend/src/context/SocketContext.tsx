@@ -5,8 +5,8 @@ const SocketContext = createContext();
 
 export const useSocket = () => useContext(SocketContext);
 
-// Connecting to the backend on port 5000
-const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:3001', {
+// Connecting to the backend (use VITE_API_URL in production)
+const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000', {
     autoConnect: false // Connect manually when context mounts
 });
 
