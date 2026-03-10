@@ -31,7 +31,7 @@ export default function Profile() {
 
         try {
             const token = localStorage.getItem('token');
-            const res = await fetch('http://localhost:3001/auth/profile', {
+            const res = await fetch('https://dominoes-appback.onrender.com/auth/profile', {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',

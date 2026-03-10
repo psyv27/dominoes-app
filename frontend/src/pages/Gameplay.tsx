@@ -30,7 +30,10 @@ export default function Gameplay({ room }: any) {
 
         socket.on('gameState', (state: any) => {
             setGameState(state);
-            setRoundOverData(null);
+            if (state.state === 'playing') {
+                setRoundOverData(null);
+                setMatchOverData(null);
+            }
 
             // Show turn popup when turn changes
             if (state.turn !== prevTurnRef.current) {
@@ -54,6 +57,20 @@ export default function Gameplay({ room }: any) {
         socket.on('playerPassed', () => {
             setBlockedPopup(true);
             setTimeout(() => setBlockedPopup(false), 1200);
+        });
+
+        socket.on('roomDestroyed', (msg: string) => {
+            alert(msg || 'Host has left. Room closed.');
+            navigate('/lobby');
+        });
+
+        socket.on('matchAborted', (msg: string) => {
+            alert(msg || 'Player disconnected. Match aborted.');
+            if (room?.id) {
+                navigate(`/room/${room.id}`);
+            } else {
+                navigate('/lobby');
+            }
         });
 
         // Turn timer events
@@ -88,6 +105,8 @@ export default function Gameplay({ room }: any) {
             socket.off('matchOver');
             socket.off('boneDrawn');
             socket.off('playerPassed');
+            socket.off('roomDestroyed');
+            socket.off('matchAborted');
             socket.off('turnTimerStart');
             socket.off('turnTimerTick');
             socket.off('playerAutoAction');
@@ -186,20 +205,23 @@ export default function Gameplay({ room }: any) {
                     <h2>Match Over!</h2>
                     <h3>Winner: {room.players[matchOverData.winner]?.nickname || matchOverData.winner || 'Unknown'}</h3>
                     <div className="final-scores">
-                        {Object.entries(matchOverData.scores).map(([id, score]: any) => (
-                            <div key={id} className={`f-score ${id === matchOverData.winner ? 'f-winner' : 'f-loser'}`}>
-                                <span>
-                                    {id === matchOverData.winner ? '🏆 ' : '💀 '}
-                                    {room.players[id]?.nickname}
-                                    <span style={{ fontSize: '0.7rem', marginLeft: '5px', opacity: 0.7 }}>
-                                        ({id === matchOverData.winner ? 'Winner' : 'Loser'})
+                        {Object.keys(room.players).map((id: string) => {
+                            const score = matchOverData.scores[id] || 0;
+                            return (
+                                <div key={id} className={`f-score ${id === matchOverData.winner ? 'f-winner' : 'f-loser'}`}>
+                                    <span>
+                                        {id === matchOverData.winner ? '🏆 ' : '💀 '}
+                                        {room.players[id]?.nickname}
+                                        <span style={{ fontSize: '0.7rem', marginLeft: '5px', opacity: 0.7 }}>
+                                            ({id === matchOverData.winner ? 'Winner' : 'Loser'})
+                                        </span>
                                     </span>
-                                </span>
-                                <span>{score} {matchOverData.formatWins ? 'wins' : 'pts'}</span>
-                            </div>
-                        ))}
+                                    <span>{score} {matchOverData.formatWins ? 'wins' : 'pts'}</span>
+                                </div>
+                            );
+                        })}
                     </div>
-                    <button className="primary-btn mt-4" onClick={() => navigate('/lobby')}>Return to Lobby</button>
+                    <button className="primary-btn mt-4" onClick={handleLeaveGame}>Return to Lobby</button>
                 </div>
             </div>
         );
@@ -224,22 +246,26 @@ export default function Gameplay({ room }: any) {
                         <h3>Winner: {room.players[roundOverData.winner]?.nickname || roundOverData.winner || 'None'}</h3>
                         <div className="current-scores">
                             <h4>{roundOverData.roundWins ? 'Wins' : 'Points'}</h4>
-                            {Object.entries(roundOverData.roundWins || roundOverData.scores).map(([id, score]: any) => (
-                                <div key={id} className={`c-score ${id === roundOverData.winner ? 'c-winner' : 'c-loser'}`}>
-                                    <span>
-                                        {id === roundOverData.winner ? '🏆 ' : '💀 '}
-                                        {room.players[id]?.nickname}
-                                        <span style={{ fontSize: '0.7rem', marginLeft: '5px', opacity: 0.7 }}>
-                                            ({id === roundOverData.winner ? 'Winner' : 'Loser'})
+                            {Object.keys(room.players).map((id: string) => {
+                                const statsSrc = roundOverData.roundWins || roundOverData.scores;
+                                const score = statsSrc[id] || 0;
+                                return (
+                                    <div key={id} className={`c-score ${id === roundOverData.winner ? 'c-winner' : 'c-loser'}`}>
+                                        <span>
+                                            {id === roundOverData.winner ? '🏆 ' : '💀 '}
+                                            {room.players[id]?.nickname}
+                                            <span style={{ fontSize: '0.7rem', marginLeft: '5px', opacity: 0.7 }}>
+                                                ({id === roundOverData.winner ? 'Winner' : 'Loser'})
+                                            </span>
                                         </span>
-                                    </span>
-                                    {room.matchFormat === 'Score' ? (
-                                        <span>{score} / {room.targetScore}</span>
-                                    ) : (
-                                        <span>{score}</span>
-                                    )}
-                                </div>
-                            ))}
+                                        {room.matchFormat === 'Score' ? (
+                                            <span>{score} / {room.targetScore}</span>
+                                        ) : (
+                                            <span>{score}</span>
+                                        )}
+                                    </div>
+                                );
+                            })}
                         </div>
                         {room.hostId === socket.id ? (
                             <button className="primary-btn mt-4" onClick={nextRound}>Start Next Round</button>

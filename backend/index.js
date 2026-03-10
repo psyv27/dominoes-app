@@ -303,12 +303,22 @@ io.on('connection', (socket) => {
     });
 
     socket.on('leaveRoom', () => {
-        const room = roomManager.leaveRoom(socket.id);
-        if (room) {
+        const result = roomManager.leaveRoom(socket.id);
+        if (result && result.room) {
+            const { room, destroyed, aborted } = result;
             clearTurnTimer(room.id);
             delete botInstances[room.id];
             socket.leave(room.id);
-            io.to(room.id).emit('roomUpdated', room);
+
+            if (destroyed) {
+                io.to(room.id).emit('roomDestroyed', 'The host has left or room is empty. Room destroyed.');
+                io.in(room.id).socketsLeave(room.id);
+            } else if (aborted) {
+                io.to(room.id).emit('matchAborted', 'A player disconnected. The match has been aborted.');
+                io.to(room.id).emit('roomUpdated', room);
+            } else {
+                io.to(room.id).emit('roomUpdated', room);
+            }
             io.emit('roomsUpdated', roomManager.getPublicRooms());
         }
     });
@@ -434,11 +444,21 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
-        const room = roomManager.leaveRoom(socket.id);
-        if (room) {
+        const result = roomManager.leaveRoom(socket.id);
+        if (result && result.room) {
+            const { room, destroyed, aborted } = result;
             clearTurnTimer(room.id);
             delete botInstances[room.id];
-            io.to(room.id).emit('roomUpdated', room);
+
+            if (destroyed) {
+                io.to(room.id).emit('roomDestroyed', 'The host has left or room is empty. Room destroyed.');
+                io.in(room.id).socketsLeave(room.id);
+            } else if (aborted) {
+                io.to(room.id).emit('matchAborted', 'A player disconnected. The match has been aborted.');
+                io.to(room.id).emit('roomUpdated', room);
+            } else {
+                io.to(room.id).emit('roomUpdated', room);
+            }
             io.emit('roomsUpdated', roomManager.getPublicRooms());
         }
     });

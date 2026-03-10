@@ -109,6 +109,11 @@ class RoomManager {
 
         const room = this.rooms[roomId];
         if (room) {
+            const wasPlaying = room.state === 'playing';
+            const wasHost = room.hostId === socketId;
+            let destroyed = false;
+            let aborted = false;
+
             delete room.players[socketId];
             delete this.socketToRoom[socketId];
 
@@ -121,17 +126,22 @@ class RoomManager {
                 const humanPlayers = Object.keys(room.players).filter(id => !room.players[id].isBot);
                 if (humanPlayers.length === 0) {
                     delete this.rooms[roomId];
-                    return room;
+                    return { room, destroyed: true };
                 }
             }
 
-            if (Object.keys(room.players).filter(id => !room.players[id]?.isBot).length === 0) {
+            if (Object.keys(room.players).filter(id => !room.players[id]?.isBot).length === 0 || wasHost) {
+                // Host left or room empty -> Destroy room
                 delete this.rooms[roomId];
-            } else if (room.hostId === socketId) {
-                const humanPlayers = Object.keys(room.players).filter(id => !room.players[id].isBot);
-                room.hostId = humanPlayers[0] || Object.keys(room.players)[0];
+                destroyed = true;
+            } else if (wasPlaying) {
+                // A player left during an active match -> Abort Match
+                room.state = 'waiting';
+                room.game = null;
+                aborted = true;
             }
-            return room;
+
+            return { room, destroyed, aborted };
         }
         return null;
     }
