@@ -12,7 +12,7 @@ export const AuthProvider = ({ children }) => {
         // Here we could fetch /me from the backend if we have a token
         const token = localStorage.getItem('token');
         const storedUser = localStorage.getItem('user');
-        
+
         if (token && storedUser) {
             setUser(JSON.parse(storedUser));
         }
@@ -20,7 +20,7 @@ export const AuthProvider = ({ children }) => {
 
     const login = async (username, password) => {
         try {
-            const res = await fetch('http://localhost:5000/auth/login', {
+            const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/auth/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password })
@@ -42,7 +42,7 @@ export const AuthProvider = ({ children }) => {
 
     const register = async (username, password, nickname) => {
         try {
-            const res = await fetch('http://localhost:5000/auth/register', {
+            const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/auth/register`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password, nickname })
