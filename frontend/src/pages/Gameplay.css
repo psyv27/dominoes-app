@@ -73,13 +73,26 @@
 .c-score, .f-score {
     display: flex;
     justify-content: space-between;
-    padding: 0.4rem 0.3rem;
+    padding: 0.5rem 0.4rem;
     border-bottom: 1px solid rgba(255,255,255,0.05);
-    font-size: 0.9rem;
+    font-size: 0.95rem;
+    align-items: center;
+}
+
+.c-winner, .f-winner {
+    background: rgba(39, 174, 96, 0.2);
+    color: #2ecc71;
+    font-weight: bold;
+    border-radius: 6px;
+}
+
+.c-loser, .f-loser {
+    color: #e74c3c;
 }
 
 .waiting-host { color: #f0c040; margin-top: 1rem; font-style: italic; }
 .mt-4 { margin-top: 1.5rem; width: 100%; }
+.mt-2 { margin-top: 0.8rem; width: 100%; }
 
 /* === TURN POPUP === */
 .turn-popup {
@@ -232,7 +245,7 @@
 .table-wrapper {
     flex: 1;
     position: relative;
-    overflow: hidden;
+    /* Removed overflow: hidden so emoji bubbles can appear correctly over the bounds */
 }
 
 /* === PLAYER SEATS — playdrift style cards === */
@@ -372,7 +385,7 @@
     align-items: center;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 2px;
+    gap: 0;
     padding: 1rem;
     width: 100%;
     max-height: 100%;
@@ -394,6 +407,7 @@
 .board-bone {
     filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
     animation: placeBone 0.3s ease-out;
+    margin: -1px; /* Slightly overlap to connect the borders cleanly */
 }
 
 @keyframes placeBone {
@@ -442,6 +456,17 @@
     z-index: 20;
 }
 
+.unplayable-bone {
+    opacity: 0.45;
+    filter: grayscale(80%) contrast(80%);
+    cursor: not-allowed;
+}
+
+.unplayable-bone:hover {
+    transform: none;
+    z-index: 10;
+}
+
 .primary-btn {
     background: #e67e22;
     color: #fff;
@@ -475,8 +500,133 @@
 
 @media (max-width: 480px) {
     .board-area { top: 38px; left: 8px; right: 8px; bottom: 38px; }
-    .seat-score { font-size: 0.6rem; }
     .seat-score small { display: none; }
     .mode-badge { display: none; }
     .leave-game-btn { width: 28px; height: 28px; border-radius: 6px; }
+}
+
+/* === OPPONENT HANDS === */
+.opponent-hand {
+    display: flex;
+    gap: 2px;
+}
+.opp-hand-0 { /* Top Seat */
+    margin-top: 8px;
+}
+.opp-hand-1 { /* Left Seat */
+    flex-direction: column;
+    margin-top: 8px;
+}
+.opp-hand-2 { /* Right Seat */
+    flex-direction: column;
+    margin-top: 8px;
+}
+
+.opp-bone-wrap {
+    transform: scale(0.65);
+    background: transparent;
+    margin: -8px; /* reduce spacing due to scale */
+}
+
+/* === EMOJI CHAT === */
+.quick-chat-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 500;
+}
+
+.quick-chat-toggle {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: #e67e22;
+    color: white;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: transform 0.2s;
+}
+
+.quick-chat-toggle:hover {
+    transform: scale(1.1);
+}
+
+.quick-chat-menu {
+    position: absolute;
+    bottom: 60px;
+    right: 0;
+    background: #34495e;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    max-height: 250px;
+    overflow-y: auto;
+    gap: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    animation: popIn 0.2s ease-out;
+}
+
+.quick-chat-menu::-webkit-scrollbar { width: 4px; }
+.quick-chat-menu::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
+
+.qc-btn {
+    background: rgba(0,0,0,0.2);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: white;
+    cursor: pointer;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    text-align: center;
+    transition: background 0.2s;
+}
+
+.qc-btn:hover {
+    background: rgba(230, 126, 34, 0.4);
+}
+
+.emoji-bubble {
+    position: absolute;
+    top: -45px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: white;
+    color: #333;
+    padding: 6px 12px;
+    border-radius: 16px;
+    font-size: 0.9rem;
+    font-weight: bold;
+    white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    animation: bounceIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    z-index: 100;
+}
+
+.emoji-bubble::after {
+    content: '';
+    position: absolute;
+    bottom: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-width: 6px 6px 0;
+    border-style: solid;
+    border-color: white transparent transparent transparent;
+}
+
+.user-bubble {
+    top: -50px;
+}
+
+@keyframes bounceIn {
+    0% { transform: translateX(-50%) scale(0); }
+    80% { transform: translateX(-50%) scale(1.1); }
+    100% { transform: translateX(-50%) scale(1); }
 }

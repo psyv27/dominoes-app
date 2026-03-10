@@ -1,11 +1,14 @@
 import React from 'react';
 import './Domino.css';
 
-const Domino = ({ bone, onClick, isHorizontal = false, isInteractive = false }: {
+const Domino = ({ bone, onClick, isHorizontal = false, isInteractive = false, faceDown = false, skinUrl, skinColor }: {
     bone: { left: number; right: number };
     onClick?: () => void;
     isHorizontal?: boolean;
     isInteractive?: boolean;
+    faceDown?: boolean;
+    skinUrl?: string;
+    skinColor?: string;
 }) => {
     const renderDots = (count: number) => {
         const dotsArray = Array(count).fill(0);
@@ -17,6 +20,22 @@ const Domino = ({ bone, onClick, isHorizontal = false, isInteractive = false }: 
             </div>
         );
     };
+
+    if (faceDown) {
+        return (
+            <div
+                className={`domino face-down ${isHorizontal ? 'horizontal' : 'vertical'}`}
+                style={{
+                    backgroundColor: skinColor || '#c1a57b',
+                    backgroundImage: skinUrl ? `url(${skinUrl})` : 'none',
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center',
+                }}
+            >
+                <div className="domino-logo">🂠</div>
+            </div>
+        );
+    }
 
     return (
         <div

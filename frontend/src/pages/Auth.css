@@ -100,6 +100,39 @@
     color: #7a6a58;
 }
 
+.pwd-toggle-btn {
+    position: absolute;
+    right: 1rem;
+    background: none;
+    border: none;
+    color: #8a7a68;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s;
+}
+
+.pwd-toggle-btn:hover {
+    color: #d4a962;
+}
+
+.pwd-toggle-btn:focus {
+    outline: none;
+}
+
+.forgot-pwd-wrap {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: -0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.forgot-pwd-btn {
+    font-size: 0.85rem;
+}
+
 .primary-btn {
     display: flex;
     justify-content: center;

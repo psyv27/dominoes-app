@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
-import { LogOut, Plus, Users, Hash, PlaySquare, ShoppingBag, Backpack, Bot, Timer } from 'lucide-react';
+import { LogOut, Plus, Users, Hash, PlaySquare, ShoppingBag, Backpack, Bot, Timer, Edit3 } from 'lucide-react';
 import './Lobby.css';
 
 export default function Lobby() {
@@ -18,6 +18,7 @@ export default function Lobby() {
         roomType: 'Public',
         gameMode: 'Normal',
         teamMode: 'Free For All',
+        matchFormat: 'Score',
         targetScore: 100,
         turnTimer: 10
     });
@@ -25,6 +26,7 @@ export default function Lobby() {
         botDifficulty: 'normal',
         botCount: 1,
         gameMode: 'Normal',
+        matchFormat: 'Score',
         targetScore: 100,
         turnTimer: 10
     });
@@ -35,7 +37,7 @@ export default function Lobby() {
 
         socket.emit('getRooms');
         socket.on('roomsUpdated', (updatedRooms: any) => setRooms(updatedRooms));
-        socket.on('roomJoined', (room: any) => navigate(`/room/${room.id}`));
+        socket.on('roomJoined', (room: any) => navigate(`/room/${room.id}`, { state: { room } }));
         socket.on('error', (err: string) => alert(err));
 
         return () => {
@@ -80,7 +82,7 @@ export default function Lobby() {
             <header className="lobby-header">
                 <div>
                     <h1>Dominoes Master</h1>
-                    <div className="user-profile">
+                    <div className="user-profile" onClick={() => navigate('/profile')} style={{ cursor: 'pointer' }} title="Edit Profile">
                         <span className="nickname">{user?.nickname}</span>
                         {user?.isGuest ? (
                             <span className="badge guest-badge">Guest</span>
@@ -90,6 +92,7 @@ export default function Lobby() {
                                 <span className="xp-text">{user?.xp} XP</span>
                             </>
                         )}
+                        <Edit3 size={14} style={{ marginLeft: '4px', opacity: 0.7 }} />
                     </div>
                 </div>
                 <div className="lobby-nav">
@@ -141,9 +144,20 @@ export default function Lobby() {
                                         </select>
                                     </label>
                                     <label>
-                                        Target Score
-                                        <input type="number" value={spSettings.targetScore} min="10" step="10" onChange={e => setSpSettings({...spSettings, targetScore: parseInt(e.target.value)})} />
+                                        Match Format
+                                        <select value={spSettings.matchFormat} onChange={e => setSpSettings({...spSettings, matchFormat: e.target.value})}>
+                                            <option>Score</option>
+                                            <option>Best of 1</option>
+                                            <option>Best of 3</option>
+                                            <option>Best of 5</option>
+                                        </select>
                                     </label>
+                                    {spSettings.matchFormat === 'Score' && (
+                                        <label>
+                                            Target Score
+                                            <input type="number" value={spSettings.targetScore} min="10" step="10" onChange={e => setSpSettings({...spSettings, targetScore: parseInt(e.target.value)})} />
+                                        </label>
+                                    )}
                                     <label>
                                         <Timer size={14} /> Turn Timer (sec)
                                         <input type="number" value={spSettings.turnTimer} min={10} max={60} step={5} onChange={e => setSpSettings({...spSettings, turnTimer: parseInt(e.target.value) || 10})} />
@@ -194,9 +208,20 @@ export default function Lobby() {
                                         </select>
                                     </label>
                                     <label>
-                                        Target Score
-                                        <input type="number" value={settings.targetScore} min="10" step="10" onChange={e => setSettings({...settings, targetScore: parseInt(e.target.value)})} />
+                                        Match Format
+                                        <select value={settings.matchFormat} onChange={e => setSettings({...settings, matchFormat: e.target.value})}>
+                                            <option>Score</option>
+                                            <option>Best of 1</option>
+                                            <option>Best of 3</option>
+                                            <option>Best of 5</option>
+                                        </select>
                                     </label>
+                                    {settings.matchFormat === 'Score' && (
+                                        <label>
+                                            Target Score
+                                            <input type="number" value={settings.targetScore} min="10" step="10" onChange={e => setSettings({...settings, targetScore: parseInt(e.target.value)})} />
+                                        </label>
+                                    )}
                                     <label>
                                         <Timer size={14} /> Turn Timer (sec)
                                         <input type="number" value={settings.turnTimer} min={10} max={60} step={5} onChange={e => setSettings({...settings, turnTimer: parseInt(e.target.value) || 10})} />
@@ -237,7 +262,7 @@ export default function Lobby() {
                                         <div className="room-tags">
                                             <span className="tag"><Users size={14}/> {room.playerCount}/4</span>
                                             <span className="tag mode-tag">{room.teamMode}</span>
-                                            <span className="tag score-tag">First to {room.targetScore}</span>
+                                            <span className="tag score-tag">{room.matchFormat === 'Score' ? `First to ${room.targetScore}` : room.matchFormat}</span>
                                             <span className="tag timer-tag"><Timer size={12}/> {room.turnTimer}s</span>
                                         </div>
                                     </div>

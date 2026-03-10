@@ -17,14 +17,17 @@ class RoomManager {
             roomType: settings.roomType || 'Public',
             gameMode: settings.gameMode || 'Normal',
             teamMode: settings.teamMode || 'Free For All',
-            targetScore: settings.targetScore || 100,
+            matchFormat: settings.matchFormat || 'Score', // 'Score', 'Best of 1', 'Best of 3', 'Best of 5'
+            targetScore: settings.targetScore || 100, // Only used if matchFormat === 'Score'
             turnTimer: Math.max(10, Math.min(60, settings.turnTimer || 10)), // 10-60 seconds
             isSinglePlayer: settings.isSinglePlayer || false,
             botDifficulty: settings.botDifficulty || 'normal',
             botCount: settings.botCount || 1, // 1 or 3 bots
             state: 'waiting',
             game: null,
-            scores: {}
+            scores: {},
+            roundWins: {}, // For Best of X formats
+            currentRoundNumber: 1
         };
 
         this.rooms[roomId] = room;
@@ -44,6 +47,7 @@ class RoomManager {
                 playerCount: Object.keys(r.players).filter(id => !r.players[id].isBot).length,
                 gameMode: r.gameMode,
                 teamMode: r.teamMode,
+                matchFormat: r.matchFormat,
                 targetScore: r.targetScore,
                 turnTimer: r.turnTimer
             }));
@@ -140,10 +144,11 @@ class RoomManager {
         if (playerIds.length < 2) return { error: 'Need at least 2 players' };
 
         room.state = 'playing';
-        room.game = new DominoGame(room.gameMode, room.teamMode);
+        room.game = new DominoGame(room.gameMode, room.teamMode, room.matchFormat, room.currentRoundNumber);
         
         playerIds.forEach(id => {
             room.scores[id] = room.scores[id] || 0;
+            room.roundWins[id] = room.roundWins[id] || 0;
             room.game.addPlayer(id);
         });
 

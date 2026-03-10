@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { Users, Crown, LogOut, MessageSquare, X } from 'lucide-react';
@@ -11,15 +11,21 @@ export default function Room() {
     const { user } = useAuth() as any;
     const { socket } = useSocket() as any;
     const navigate = useNavigate();
+    const location = useLocation();
 
-    const [room, setRoom] = useState<any>(null);
+    // If room was passed via navigation state (from Lobby), use it immediately
+    const passedRoom = (location.state as any)?.room || null;
+    const [room, setRoom] = useState<any>(passedRoom);
     const [messages, setMessages] = useState<any[]>([]);
     const [chatInput, setChatInput] = useState('');
 
     useEffect(() => {
         if (!socket) return;
 
-        socket.emit('joinRoom', { roomId: id, playerDetails: user });
+        // Only emit joinRoom if room wasn't already passed (i.e. direct URL navigation)
+        if (!passedRoom) {
+            socket.emit('joinRoom', { roomId: id, playerDetails: user });
+        }
 
         socket.on('roomUpdated', (updatedRoom: any) => {
             setRoom(updatedRoom);
@@ -100,7 +106,11 @@ export default function Room() {
                     <div className="room-badges">
                         <span className="badge">{room.gameMode}</span>
                         <span className="badge">{room.teamMode}</span>
-                        <span className="badge">First to {room.targetScore}</span>
+                        {room.matchFormat === 'Score' ? (
+                            <span className="badge">First to {room.targetScore}</span>
+                        ) : (
+                            <span className="badge">{room.matchFormat}</span>
+                        )}
                     </div>
                 </div>
                 <button className="leave-btn" onClick={handleLeave}>

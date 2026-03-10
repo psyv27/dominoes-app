@@ -1,5 +1,5 @@
 class DominoGame {
-    constructor(gameMode = 'Normal', teamMode = 'Free For All') {
+    constructor(gameMode = 'Normal', teamMode = 'Free For All', matchFormat = 'Score', currentRoundNumber = 1) {
         this.deck = [];
         this.players = {}; // { socketId: { hand: [] } }
         this.board = []; // Array of dominoes e.g. [{ left: 6, right: 6 }]
@@ -8,6 +8,8 @@ class DominoGame {
         this.state = 'waiting'; 
         this.gameMode = gameMode;
         this.teamMode = teamMode;
+        this.matchFormat = matchFormat;
+        this.currentRoundNumber = currentRoundNumber;
         this.roundStarterIndex = 0;
         this.passTracking = {}; // Track what numbers each player has passed on
     }
@@ -61,20 +63,41 @@ class DominoGame {
             this.passTracking[socketId] = [];
         });
 
-        // First move: player with the highest double starts
-        let highestDouble = -1;
         let startingPlayer = null;
 
-        this.playerOrder.forEach(socketId => {
-            this.players[socketId].hand.forEach(bone => {
-                if (bone.left === bone.right) {
-                    if (bone.left > highestDouble) {
-                        highestDouble = bone.left;
+        // Determine required starting double based on rules
+        let requiredDouble = -1;
+        
+        if (['Best of 1', 'Best of 3', 'Best of 5'].includes(this.matchFormat)) {
+            requiredDouble = this.currentRoundNumber;
+        } else if (this.gameMode === 'Blocking Mode' && this.currentRoundNumber === 1) {
+            requiredDouble = 1;
+        }
+
+        if (requiredDouble !== -1) {
+            this.playerOrder.forEach(socketId => {
+                this.players[socketId].hand.forEach(bone => {
+                    if (bone.left === requiredDouble && bone.right === requiredDouble) {
                         startingPlayer = socketId;
                     }
-                }
+                });
             });
-        });
+        }
+
+        // Fall back to highest double if startingPlayer is still null
+        let highestDouble = -1;
+        if (!startingPlayer) {
+            this.playerOrder.forEach(socketId => {
+                this.players[socketId].hand.forEach(bone => {
+                    if (bone.left === bone.right) {
+                        if (bone.left > highestDouble) {
+                            highestDouble = bone.left;
+                            startingPlayer = socketId;
+                        }
+                    }
+                });
+            });
+        }
 
         if (!startingPlayer) {
             // No doubles: player with highest single tile starts

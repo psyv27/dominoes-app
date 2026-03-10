@@ -14,9 +14,12 @@ export default function Gameplay({ room }: any) {
     const [gameState, setGameState] = useState<any>(room.gameState || null);
     const [roundOverData, setRoundOverData] = useState<any>(null);
     const [matchOverData, setMatchOverData] = useState<any>(null);
+    const [activeEmojis, setActiveEmojis] = useState<{ [id: string]: string }>({});
+    const [showEmojiMenu, setShowEmojiMenu] = useState(false);
     const [dragOver, setDragOver] = useState(false);
     const [turnPopup, setTurnPopup] = useState(false);
     const [blockedPopup, setBlockedPopup] = useState(false);
+    const [mustDrawPopup, setMustDrawPopup] = useState(false);
     const [drawingBone, setDrawingBone] = useState(false);
     const [timerSeconds, setTimerSeconds] = useState(0);
     const [timerTotal, setTimerTotal] = useState(10);
@@ -67,6 +70,17 @@ export default function Gameplay({ room }: any) {
             // Another player was auto-passed (timeout or bot pass)
         });
 
+        socket.on('emojiReceived', (data: any) => {
+            setActiveEmojis(prev => ({ ...prev, [data.senderId]: data.emoji }));
+            setTimeout(() => {
+                setActiveEmojis(prev => {
+                    const next = { ...prev };
+                    delete next[data.senderId];
+                    return next;
+                });
+            }, 3000);
+        });
+
         return () => {
             socket.off('gameState');
             socket.off('moveError');
@@ -77,6 +91,7 @@ export default function Gameplay({ room }: any) {
             socket.off('turnTimerStart');
             socket.off('turnTimerTick');
             socket.off('playerAutoAction');
+            socket.off('emojiReceived');
         };
     }, [socket]);
 
@@ -98,13 +113,19 @@ export default function Gameplay({ room }: any) {
             bone.left === rightEnd || bone.right === rightEnd
         );
 
-        if (!hasValidMove && gameState.deckCount === 0) {
-            // Player is blocked — show popup and auto-pass after delay
-            setBlockedPopup(true);
-            setTimeout(() => {
-                setBlockedPopup(false);
-                socket.emit('drawBone', room.id); // this will pass the turn
-            }, 1500);
+        if (!hasValidMove) {
+            if (gameState.deckCount === 0) {
+                // Player is blocked — show popup and auto-pass after delay
+                setBlockedPopup(true);
+                setTimeout(() => {
+                    setBlockedPopup(false);
+                    socket.emit('drawBone', room.id); // this will pass the turn
+                }, 1500);
+            } else {
+                setMustDrawPopup(true);
+            }
+        } else {
+            setMustDrawPopup(false);
         }
     }, [gameState, socket, room.id]);
 
@@ -118,6 +139,9 @@ export default function Gameplay({ room }: any) {
         const rightEnd = gameState.board[gameState.board.length - 1].right;
         const canLeft = bone.left === leftEnd || bone.right === leftEnd;
         const canRight = bone.left === rightEnd || bone.right === rightEnd;
+        
+        if (!canLeft && !canRight) return; // Prevent playing unplayable bone
+
         if (canLeft && canRight && leftEnd !== rightEnd) {
             socket.emit('playBone', { roomId: room.id, bone, end: 'right' });
         } else if (canRight) {
@@ -142,6 +166,17 @@ export default function Gameplay({ room }: any) {
         e.dataTransfer.setData('text/plain', JSON.stringify(bone));
     };
 
+    const sendEmoji = (emoji: string) => {
+        socket.emit('sendEmoji', { roomId: room.id, emoji, senderId: socket.id });
+        setShowEmojiMenu(false);
+    };
+
+    const QUICK_MSGS = [
+        'Good luck!', 'Bravo!', 'Thanks!', 'Oops!', 
+        'Dınqıldadassan', 'Keşdi', 'Gəl görüm kukuş',
+        '😂', '😡', '🔥', '🤔'
+    ];
+
     // Match Over
     if (matchOverData) {
         return (
@@ -149,12 +184,18 @@ export default function Gameplay({ room }: any) {
                 <div className="end-card match-end">
                     <Trophy size={56} className="trophy-icon" />
                     <h2>Match Over!</h2>
-                    <h3>Winner: {room.players[matchOverData.winner]?.nickname}</h3>
+                    <h3>Winner: {room.players[matchOverData.winner]?.nickname || matchOverData.winner || 'Unknown'}</h3>
                     <div className="final-scores">
                         {Object.entries(matchOverData.scores).map(([id, score]: any) => (
-                            <div key={id} className="f-score">
-                                <span>{room.players[id]?.nickname}</span>
-                                <span>{score} pts</span>
+                            <div key={id} className={`f-score ${id === matchOverData.winner ? 'f-winner' : 'f-loser'}`}>
+                                <span>
+                                    {id === matchOverData.winner ? '🏆 ' : '💀 '}
+                                    {room.players[id]?.nickname}
+                                    <span style={{ fontSize: '0.7rem', marginLeft: '5px', opacity: 0.7 }}>
+                                        ({id === matchOverData.winner ? 'Winner' : 'Loser'})
+                                    </span>
+                                </span>
+                                <span>{score} {matchOverData.formatWins ? 'wins' : 'pts'}</span>
                             </div>
                         ))}
                     </div>
@@ -180,13 +221,23 @@ export default function Gameplay({ room }: any) {
                     <div className="end-card round-end">
                         <h2>Round Ended</h2>
                         <p className="end-reason">{roundOverData.reason}</p>
-                        <h3>Winner: {room.players[roundOverData.winner]?.nickname || 'None'}</h3>
+                        <h3>Winner: {room.players[roundOverData.winner]?.nickname || roundOverData.winner || 'None'}</h3>
                         <div className="current-scores">
-                            <h4>Scoreboard</h4>
-                            {Object.entries(roundOverData.scores).map(([id, score]: any) => (
-                                <div key={id} className="c-score">
-                                    <span>{room.players[id]?.nickname}</span>
-                                    <span>{score} / {room.targetScore}</span>
+                            <h4>{roundOverData.roundWins ? 'Wins' : 'Points'}</h4>
+                            {Object.entries(roundOverData.roundWins || roundOverData.scores).map(([id, score]: any) => (
+                                <div key={id} className={`c-score ${id === roundOverData.winner ? 'c-winner' : 'c-loser'}`}>
+                                    <span>
+                                        {id === roundOverData.winner ? '🏆 ' : '💀 '}
+                                        {room.players[id]?.nickname}
+                                        <span style={{ fontSize: '0.7rem', marginLeft: '5px', opacity: 0.7 }}>
+                                            ({id === roundOverData.winner ? 'Winner' : 'Loser'})
+                                        </span>
+                                    </span>
+                                    {room.matchFormat === 'Score' ? (
+                                        <span>{score} / {room.targetScore}</span>
+                                    ) : (
+                                        <span>{score}</span>
+                                    )}
                                 </div>
                             ))}
                         </div>
@@ -195,6 +246,7 @@ export default function Gameplay({ room }: any) {
                         ) : (
                             <p className="waiting-host">Waiting for Host...</p>
                         )}
+                        <button className="primary-btn mt-2" style={{ background: '#e74c3c' }} onClick={handleLeaveGame}>Back to Lobby</button>
                     </div>
                 </div>
             )}
@@ -219,6 +271,16 @@ export default function Gameplay({ room }: any) {
                 </div>
             )}
 
+            {/* Must Draw popup */}
+            {mustDrawPopup && isMyTurn && (
+                <div className="blocked-popup" style={{ background: 'rgba(230, 126, 34, 0.95)' }}>
+                    <div className="blocked-popup-inner" style={{ background: 'transparent', boxShadow: 'none' }}>
+                        <span className="blocked-icon">⚠️</span>
+                        <span>No playable bones! Draw from boneyard.</span>
+                    </div>
+                </div>
+            )}
+
             {/* Minimal header — no turn text */}
             <header className="game-header">
                 <button className="leave-game-btn" onClick={handleLeaveGame} title="Leave Game">
@@ -227,7 +289,9 @@ export default function Gameplay({ room }: any) {
                 <div className="gh-center-info">
                     <span className="mode-badge">{room.gameMode}</span>
                     <span className="deck-pill">🂠 {gameState.deckCount}</span>
-                    <span className="target-pill">🏆 {room.targetScore}</span>
+                    <span className="target-pill">
+                        🏆 {room.matchFormat === 'Score' ? room.targetScore : room.matchFormat}
+                    </span>
                 </div>
                 <div className="gh-actions">
                     {gameState.deckCount > 0 && isMyTurn && (
@@ -275,8 +339,28 @@ export default function Gameplay({ room }: any) {
                             </div>
                             <div className="seat-meta">
                                 <span className="seat-name">{player?.nickname}{player?.isBot ? ' 🤖' : ''}</span>
-                                <span className="seat-detail">{count} · {gameState.scores[id] || 0}pts</span>
+                                <span className="seat-detail">
+                                    {room.matchFormat === 'Score' ? `${gameState.scores[id] || 0}pts` : `${roundOverData?.roundWins?.[id] || 0} wins`}
+                                </span>
                             </div>
+                            
+                            {/* Opponent Hand Display */}
+                            <div className={`opponent-hand opp-hand-${idx}`}>
+                                {Array.from({ length: count }).map((_, i) => (
+                                    <div key={i} className="opp-bone-wrap">
+                                        <Domino 
+                                            bone={{ left: 0, right: 0 }} 
+                                            faceDown 
+                                            skinUrl={player?.equippedSkin}
+                                            skinColor={player?.botColor || '#1f2937'}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+
+                            {activeEmojis[id] && (
+                                <div className="emoji-bubble">{activeEmojis[id]}</div>
+                            )}
                             {isTurn && <div className="seat-turn-glow"></div>}
                         </div>
                     );
@@ -297,7 +381,7 @@ export default function Gameplay({ room }: any) {
                         ) : (
                             gameState.board.map((bone: any, idx: number) => (
                                 <div key={idx} className="board-bone">
-                                    <Domino bone={bone} isHorizontal />
+                                    <Domino bone={bone} isHorizontal={bone.left !== bone.right} />
                                 </div>
                             ))
                         )}
@@ -329,8 +413,13 @@ export default function Gameplay({ room }: any) {
                     </div>
                     <div className="seat-meta">
                         <span className="seat-name">You</span>
-                        <span className="seat-detail">{gameState.hand.length} · {gameState.scores[socket.id] || 0}pts</span>
+                        <span className="seat-detail">
+                            {room.matchFormat === 'Score' ? `${gameState.scores[socket.id] || 0}pts` : `${roundOverData?.roundWins?.[socket.id] || 0} wins`}
+                        </span>
                     </div>
+                    {activeEmojis[socket.id] && (
+                        <div className="emoji-bubble user-bubble">{activeEmojis[socket.id]}</div>
+                    )}
                     {isMyTurn && <div className="seat-turn-glow"></div>}
                 </div>
             </div>
@@ -338,21 +427,49 @@ export default function Gameplay({ room }: any) {
             {/* Hand */}
             <div className="player-area">
                 <div className={`hand-tray ${isMyTurn ? 'hand-active' : ''}`}>
-                    {gameState.hand.map((bone: any, idx: number) => (
-                        <div 
-                            key={idx} 
-                            className={`hand-bone-wrapper ${isMyTurn ? 'draggable' : ''}`}
-                            draggable={isMyTurn}
-                            onDragStart={(e) => handleDragStart(e, bone)}
-                        >
-                            <Domino
-                                bone={bone}
-                                isInteractive={isMyTurn}
-                                onClick={() => { if (isMyTurn) smartPlayBone(bone); }}
-                            />
-                        </div>
-                    ))}
+                    {gameState.hand.map((bone: any, idx: number) => {
+                        let isPlayable = true;
+                        if (gameState.board.length > 0) {
+                            const leftEnd = gameState.board[0].left;
+                            const rightEnd = gameState.board[gameState.board.length - 1].right;
+                            isPlayable = bone.left === leftEnd || bone.right === leftEnd || bone.left === rightEnd || bone.right === rightEnd;
+                        }
+
+                        return (
+                            <div 
+                                key={idx} 
+                                className={`hand-bone-wrapper ${isMyTurn && isPlayable ? 'draggable' : ''} ${isMyTurn && !isPlayable ? 'unplayable-bone' : ''}`}
+                                draggable={isMyTurn && isPlayable}
+                                onDragStart={(e) => isMyTurn && isPlayable && handleDragStart(e, bone)}
+                            >
+                                <Domino
+                                    bone={bone}
+                                    isInteractive={isMyTurn && isPlayable}
+                                    onClick={() => { if (isMyTurn && isPlayable) smartPlayBone(bone); }}
+                                />
+                            </div>
+                        );
+                    })}
                 </div>
+            </div>
+
+            {/* Quick Chat Menu */}
+            <div className="quick-chat-container">
+                <button 
+                    className="quick-chat-toggle"
+                    onClick={() => setShowEmojiMenu(!showEmojiMenu)}
+                >
+                    💬
+                </button>
+                {showEmojiMenu && (
+                    <div className="quick-chat-menu">
+                        {QUICK_MSGS.map((msg, i) => (
+                            <button key={i} className="qc-btn" onClick={() => sendEmoji(msg)}>
+                                {msg}
+                            </button>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     );

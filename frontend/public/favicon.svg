@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34495e"/>
+      <stop offset="50%" stop-color="#e67e22"/>
+      <stop offset="100%" stop-color="#2c3e50"/>
+    </linearGradient>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+  
+  <rect x="5" y="5" width="90" height="90" rx="20" fill="url(#bgGradient)" />
+  <rect x="25" y="25" width="50" height="50" rx="10" fill="white" filter="url(#shadow)" transform="rotate(-45 50 50)" />
+  
+  <line x1="25" y1="50" x2="75" y2="50" stroke="#34495e" stroke-width="2" transform="rotate(-45 50 50)" />
+  
+  <circle cx="45" cy="40" r="3" fill="#34495e" />
+  <circle cx="55" cy="60" r="3" fill="#e67e22" />
+  
+  <text x="50" y="38" font-family="Arial" font-size="16" font-weight="900" fill="#34495e" text-anchor="middle">D</text>
+  <text x="50" y="73" font-family="Arial" font-size="16" font-weight="900" fill="#e67e22" text-anchor="middle">W</text>
+</svg>

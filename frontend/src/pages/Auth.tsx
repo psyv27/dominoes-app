@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { User, KeyRound, UserPlus, LogIn, Compass } from 'lucide-react';
+import { User, KeyRound, UserPlus, LogIn, Compass, Eye, EyeOff } from 'lucide-react';
 import './Auth.css'; // We'll create some styles shortly
 
 export default function Auth() {
     const [isLogin, setIsLogin] = useState(true);
     const [formData, setFormData] = useState({ username: '', password: '', nickname: '' });
     const [error, setError] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     
-    const { login, register, playAsGuest } = useAuth();
+    const { login, register, playAsGuest } = useAuth() as any;
     const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
@@ -74,13 +75,29 @@ export default function Auth() {
                     <div className="input-group">
                         <KeyRound className="input-icon" size={18} />
                         <input 
-                            type="password" 
+                            type={showPassword ? "text" : "password"} 
                             placeholder="Password" 
                             value={formData.password}
                             onChange={e => setFormData({...formData, password: e.target.value})}
                             required
                         />
+                        <button 
+                            type="button" 
+                            className="pwd-toggle-btn"
+                            onClick={() => setShowPassword(!showPassword)}
+                            aria-label={showPassword ? "Hide password" : "Show password"}
+                        >
+                            {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
                     </div>
+
+                    {isLogin && (
+                        <div className="forgot-pwd-wrap">
+                            <button type="button" className="link-btn forgot-pwd-btn" onClick={() => alert('Forgot Password functionality coming soon!')}>
+                                Forgot Password?
+                            </button>
+                        </div>
+                    )}
 
                     <button type="submit" className="primary-btn">
                         {isLogin ? <><LogIn size={18}/> Sign In</> : <><UserPlus size={18}/> Register</>}
@@ -98,7 +115,11 @@ export default function Auth() {
                 <div className="auth-footer">
                     <p>
                         {isLogin ? "Don't have an account? " : "Already have an account? "}
-                        <button type="button" className="link-btn" onClick={() => setIsLogin(!isLogin)}>
+                        <button type="button" className="link-btn" onClick={() => {
+                            setIsLogin(!isLogin);
+                            setFormData({ username: '', password: '', nickname: '' });
+                            setError('');
+                        }}>
                             {isLogin ? "Sign up" : "Sign in"}
                         </button>
                     </p>

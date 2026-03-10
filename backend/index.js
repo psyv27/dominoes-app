@@ -110,20 +110,46 @@ function handleRoundEnd(roomId, result) {
     if (!room) return;
 
     clearTurnTimer(roomId);
+    
+    // Increment points
     const winnerScore = result.winnerScore || 0;
     room.scores[result.winner] = (room.scores[result.winner] || 0) + winnerScore;
 
+    // Increment round wins for Best Of formats
+    if (result.winner) {
+        room.roundWins[result.winner] = (room.roundWins[result.winner] || 0) + 1;
+    }
+
     let matchOver = false;
-    for (let id in room.scores) {
-        if (room.scores[id] >= room.targetScore) {
-            matchOver = true;
-            io.to(roomId).emit('matchOver', { winner: id, scores: room.scores });
-            room.state = 'finished';
-            break;
+    
+    if (room.matchFormat === 'Score') {
+        for (let id in room.scores) {
+            if (room.scores[id] >= room.targetScore) {
+                matchOver = true;
+                io.to(roomId).emit('matchOver', { winner: id, scores: room.scores });
+                room.state = 'finished';
+                break;
+            }
+        }
+    } else {
+        // Match formats: Best of 1, 3, or 5
+        let requiredWins = 1;
+        if (room.matchFormat === 'Best of 3') requiredWins = 2;
+        if (room.matchFormat === 'Best of 5') requiredWins = 3;
+
+        for (let id in room.roundWins) {
+            if (room.roundWins[id] >= requiredWins) {
+                matchOver = true;
+                // Emit with roundWins instead of scores for the end screen
+                io.to(roomId).emit('matchOver', { winner: id, scores: room.roundWins, formatWins: true });
+                room.state = 'finished';
+                break;
+            }
         }
     }
+
     if (!matchOver) {
-        io.to(roomId).emit('roundEnd', { winner: result.winner, reason: result.reason, scores: room.scores });
+        io.to(roomId).emit('roundEnd', { winner: result.winner, reason: result.reason, scores: room.scores, roundWins: room.roundWins });
     }
     broadcastGameState(roomId);
 }
@@ -228,7 +254,7 @@ io.on('connection', (socket) => {
 
     // --- SINGLE PLAYER ---
     socket.on('createSinglePlayer', (data) => {
-        // data: { playerDetails, settings: { botDifficulty, botCount, gameMode, turnTimer, targetScore } }
+        // data: { playerDetails, settings: { botDifficulty, botCount, gameMode, matchFormat, targetScore, turnTimer } }
         const settings = {
             ...data.settings,
             roomType: 'Private',
@@ -247,17 +273,20 @@ io.on('connection', (socket) => {
         botInstances[roomId] = new BotAI(settings.botDifficulty);
 
         socket.join(roomId);
-        socket.emit('roomJoined', room);
 
-        // Auto-start game
+        // Auto-start game BEFORE emitting roomJoined so room.state is 'playing'
         const startResult = roomManager.startGame(roomId);
         if (!startResult.error) {
+            // Now emit roomJoined with room in 'playing' state
+            socket.emit('roomJoined', room);
             io.to(roomId).emit('gameStarted', room);
             setTimeout(() => {
                 broadcastGameState(roomId);
                 startTurnTimer(roomId);
                 scheduleBotTurn(roomId);
             }, 500);
+        } else {
+            socket.emit('roomJoined', room);
         }
     });
 
@@ -286,6 +315,11 @@ io.on('connection', (socket) => {
 
     socket.on('chatMessage', (data) => {
         io.to(data.roomId).emit('chatMessage', data);
+    });
+
+    socket.on('sendEmoji', (data) => {
+        // data: { roomId, emoji, senderId }
+        io.to(data.roomId).emit('emojiReceived', data);
     });
 
     socket.on('kickPlayer', ({ roomId, targetSocketId }) => {
@@ -354,7 +388,17 @@ io.on('connection', (socket) => {
     socket.on('nextRound', (roomId) => {
         const room = roomManager.getRoom(roomId);
         if (room && room.hostId === socket.id && room.state !== 'finished') {
+            room.currentRoundNumber++;
+            // Pass the updated round number
+            room.game = new DominoGame(room.gameMode, room.teamMode, room.matchFormat, room.currentRoundNumber);
             room.game.startGame();
+            
+            // Re-add players to the new game instance
+            Object.keys(room.players).forEach(id => {
+                room.game.addPlayer(id);
+            });
+            room.game.startGame();
+
             io.to(roomId).emit('gameStarted', room);
             broadcastGameState(roomId);
             startTurnTimer(roomId);
