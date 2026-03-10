@@ -5,8 +5,8 @@ const SocketContext = createContext();
 
 export const useSocket = () => useContext(SocketContext);
 
-// Connecting to the backend (use VITE_API_URL in production)
-const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000', {
+// Connecting to the backend on port 5000
+const socket = io('https://dominoes-appback.onrender.com', {
     autoConnect: false // Connect manually when context mounts
 });
 
