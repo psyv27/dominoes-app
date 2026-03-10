@@ -6,6 +6,21 @@ import Domino from '../components/Domino';
 import { Trophy, SkipForward, LogOut, ArrowLeft } from 'lucide-react';
 import './Gameplay.css';
 
+const ALL_SKINS: Record<string, { name: string; type: string; preview: string; color?: string; bg?: string }> = {
+    classic: { name: 'Classic White', type: 'domino', preview: '#ffffff', color: '#000' },
+    midnight: { name: 'Midnight Blue', type: 'domino', preview: '#1a237e', color: '#90caf9' },
+    emerald: { name: 'Emerald Green', type: 'domino', preview: '#1b5e20', color: '#a5d6a7' },
+    crimson: { name: 'Crimson Red', type: 'domino', preview: '#b71c1c', color: '#ef9a9a' },
+    gold: { name: 'Royal Gold', type: 'domino', preview: '#f9a825', color: '#000' },
+    purple: { name: 'Deep Purple', type: 'domino', preview: '#4a148c', color: '#ce93d8' },
+    dark: { name: 'Dark Space', type: 'table', preview: '', bg: 'radial-gradient(circle, #111118, #050508)' },
+    felt: { name: 'Green Felt', type: 'table', preview: '', bg: 'radial-gradient(circle, #1a3c1a, #0a1f0a)' },
+    ocean: { name: 'Ocean Blue', type: 'table', preview: '', bg: 'radial-gradient(circle, #0d253f, #01111e)' },
+    sunset: { name: 'Sunset Amber', type: 'table', preview: '', bg: 'radial-gradient(circle, #3e1a00, #1a0a00)' },
+    royal: { name: 'Royal Purple', type: 'table', preview: '', bg: 'radial-gradient(circle, #2a1042, #120520)' },
+    galaxy: { name: 'Galaxy', type: 'table', preview: '', bg: 'radial-gradient(circle, #0f0c29, #302b63, #24243e)' },
+};
+
 export default function Gameplay({ room }: any) {
     const { socket } = useSocket() as any;
     const { user } = useAuth() as any;
@@ -234,6 +249,12 @@ export default function Gameplay({ room }: any) {
     const turnPlayerNick = isMyTurn ? 'You' : room.players[gameState.turn]?.nickname || '???';
 
     const seatPositions = ['seat-top', 'seat-left', 'seat-right'];
+    
+    // Resolve personal cosmetics (fallback to local if user undefined in room)
+    const myPlayerInfo = room.players[socket.id] || { equippedSkins: { domino: 'classic', table: 'dark' } };
+    const mySkins = myPlayerInfo.equippedSkins || { domino: 'classic', table: 'dark' };
+    const tableSkin = ALL_SKINS[mySkins.table] || ALL_SKINS['dark'];
+    const myDominoSkin = ALL_SKINS[mySkins.domino] || ALL_SKINS['classic'];
 
     return (
         <div className="gameplay-container">
@@ -332,7 +353,7 @@ export default function Gameplay({ room }: any) {
             </header>
 
             {/* TABLE with players around */}
-            <div className="table-wrapper">
+            <div className="table-wrapper" style={{ backgroundImage: tableSkin.bg || 'radial-gradient(circle, #111118, #050508)' }}>
                 {/* Opponent seats */}
                 {opponents.map(([id, count], idx) => {
                     const player = room.players[id];
@@ -340,6 +361,8 @@ export default function Gameplay({ room }: any) {
                     const pos = seatPositions[idx] || 'seat-top';
                     const colors = ['#26a5c9', '#e8a030', '#9c5ec4'];
                     const color = colors[idx % 3];
+                    
+                    const oppSkinData = player?.equippedSkins?.domino ? ALL_SKINS[player.equippedSkins.domino] : ALL_SKINS['classic'];
                     return (
                         <div key={id} className={`player-seat ${pos} ${isTurn ? 'is-active-turn' : ''}`}>
                             <div className="seat-avatar-wrap">
@@ -377,8 +400,8 @@ export default function Gameplay({ room }: any) {
                                         <Domino 
                                             bone={{ left: 0, right: 0 }} 
                                             faceDown 
-                                            skinUrl={player?.equippedSkin}
-                                            skinColor={player?.botColor || '#1f2937'}
+                                            skinUrl={oppSkinData?.preview}
+                                            skinColor={player?.botColor || oppSkinData?.color || '#1f2937'}
                                         />
                                     </div>
                                 ))}
@@ -472,6 +495,8 @@ export default function Gameplay({ room }: any) {
                                     bone={bone}
                                     isInteractive={isMyTurn && isPlayable}
                                     onClick={() => { if (isMyTurn && isPlayable) smartPlayBone(bone); }}
+                                    skinUrl={myDominoSkin?.preview}
+                                    skinColor={myDominoSkin?.color}
                                 />
                             </div>
                         );

@@ -47,27 +47,39 @@ export default function Lobby() {
         };
     }, [socket, isConnected, navigate]);
 
+    const getEquippedSkins = () => {
+        try {
+            const saved = localStorage.getItem('equipped');
+            return saved ? JSON.parse(saved) : { domino: 'classic', table: 'dark' };
+        } catch {
+            return { domino: 'classic', table: 'dark' };
+        }
+    };
+
     const handleCreateRoom = (e: React.FormEvent) => {
         e.preventDefault();
-        socket.emit('createRoom', { playerDetails: user, settings });
+        socket.emit('createRoom', { 
+            playerDetails: { ...user, equippedSkins: getEquippedSkins() }, 
+            settings 
+        });
     };
 
     const handleStartSinglePlayer = (e: React.FormEvent) => {
         e.preventDefault();
         socket.emit('createSinglePlayer', {
-            playerDetails: user,
+            playerDetails: { ...user, equippedSkins: getEquippedSkins() },
             settings: spSettings
         });
     };
 
     const handleJoinPublic = (roomId: string) => {
-        socket.emit('joinRoom', { roomId, playerDetails: user });
+        socket.emit('joinRoom', { roomId, playerDetails: { ...user, equippedSkins: getEquippedSkins() } });
     };
 
     const handleJoinPrivate = (e: React.FormEvent) => {
         e.preventDefault();
         if (joinCode.trim()) {
-            socket.emit('joinRoom', { roomId: joinCode.trim(), playerDetails: user });
+            socket.emit('joinRoom', { roomId: joinCode.trim(), playerDetails: { ...user, equippedSkins: getEquippedSkins() } });
         }
     };
 
