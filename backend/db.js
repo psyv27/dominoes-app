@@ -1,53 +1,90 @@
-const { v4: uuidv4 } = require('uuid');
+const sql = require('mssql');
+require('dotenv').config();
 
-const users = [];
+let poolPromise;
+
+function getConfig() {
+  return {
+    server: process.env.DB_SERVER,
+    port: Number(process.env.DB_PORT || 1433),
+    database: process.env.DB_NAME,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    connectionTimeout: Number(process.env.DB_CONNECTION_TIMEOUT || 60000),
+    requestTimeout: Number(process.env.DB_REQUEST_TIMEOUT || 60000),
+    options: {
+      encrypt: (process.env.DB_ENCRYPT || 'true') === 'true',
+      trustServerCertificate: (process.env.DB_TRUST_SERVER_CERTIFICATE || 'false') === 'true'
+    },
+    pool: {
+      max: 10,
+      min: 0,
+      idleTimeoutMillis: 30000
+    }
+  };
+}
+
+function validateConfig(config) {
+  const missing = ['server', 'database', 'user', 'password'].filter((key) => !config[key]);
+  if (missing.length > 0) {
+    throw new Error(`Missing database configuration: ${missing.join(', ')}`);
+  }
+}
+
+async function getPool() {
+  if (!poolPromise) {
+    const config = getConfig();
+    validateConfig(config);
+    poolPromise = sql.connect(config);
+  }
+
+  return poolPromise;
+}
+
+function replaceParameters(queryText) {
+  return queryText.replace(/\$(\d+)/g, (_, index) => `@p${index}`);
+}
+
+function applyReturningClause(queryText) {
+  const returningMatch = queryText.match(/\s+RETURNING\s+([\s\S]+?)\s*;?\s*$/i);
+  if (!returningMatch) {
+    return queryText;
+  }
+
+  const columns = returningMatch[1]
+    .split(',')
+    .map((column) => column.trim())
+    .filter(Boolean);
+
+  const outputClause = ` OUTPUT ${columns.map((column) => `INSERTED.${column}`).join(', ')}`;
+  const withoutReturning = queryText.replace(/\s+RETURNING\s+[\s\S]+?\s*;?\s*$/i, '');
+
+  if (/^\s*INSERT\b/i.test(withoutReturning)) {
+    return withoutReturning.replace(/\bVALUES\b/i, `${outputClause} VALUES`);
+  }
+
+  if (/^\s*UPDATE\b/i.test(withoutReturning)) {
+    return withoutReturning.replace(/\bWHERE\b/i, `${outputClause} WHERE`);
+  }
+
+  return withoutReturning;
+}
+
+function translateQuery(queryText) {
+  return applyReturningClause(replaceParameters(queryText));
+}
 
 module.exports = {
-  query: async (text, params) => {
-    if (text.includes('INSERT INTO Users')) {
-      const newUser = {
-        id: uuidv4(),
-        username: params[0],
-        password_hash: params[1],
-        nickname: params[2],
-        avatar: null,
-        xp: 0,
-        rank_level: 1,
-        total_wins: 0,
-        total_games: 0
-      };
-      users.push(newUser);
-      return { rows: [newUser] };
-    }
-    
-    if (text.includes('SELECT * FROM Users WHERE username = $1') || text.includes('SELECT id FROM Users WHERE username = $1')) {
-      const user = users.find(u => u.username === params[0]);
-      return { rows: user ? [user] : [] };
-    }
+  query: async (text, params = []) => {
+    const pool = await getPool();
+    const request = pool.request();
 
-    if (text.includes('WHERE id = $1')) {
-      const user = users.find(u => u.id === params[0]);
-      return { rows: user ? [user] : [] };
-    }
+    params.forEach((value, index) => {
+      request.input(`p${index + 1}`, value);
+    });
 
-    if (text.includes('UPDATE Users')) {
-      const id = params[params.length - 1];
-      const userIndex = users.findIndex(u => u.id === id);
-      if (userIndex !== -1) {
-        // Very basic simple mock for UPDATE fields based on params
-        if (text.includes('nickname = $1, password_hash = $2, avatar = $3')) {
-          users[userIndex].nickname = params[0] || users[userIndex].nickname;
-          users[userIndex].password_hash = params[1] || users[userIndex].password_hash;
-          users[userIndex].avatar = params[2] || users[userIndex].avatar;
-        } else if (text.includes('nickname = $1, avatar = $2')) {
-          users[userIndex].nickname = params[0] || users[userIndex].nickname;
-          users[userIndex].avatar = params[1] || users[userIndex].avatar;
-        }
-        return { rows: [users[userIndex]] };
-      }
-      return { rows: [] };
-    }
-    
-    return { rows: [] };
-  }
+    const result = await request.query(translateQuery(text));
+    return { rows: result.recordset || [] };
+  },
+  sql
 };
