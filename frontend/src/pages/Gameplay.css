@@ -366,9 +366,6 @@
     left: 70px;
     right: 70px;
     bottom: 55px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
     background: #34495e;
     border: 2px solid rgba(255,255,255,0.06);
     border-radius: 14px;
@@ -380,22 +377,17 @@
     box-shadow: inset 0 0 30px rgba(52, 152, 219, 0.15);
 }
 
-.board-scroll {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 0;
-    padding: 1rem;
+.board-absolute-container {
     width: 100%;
-    max-height: 100%;
-    overflow-y: auto;
-    overflow-x: hidden;
+    height: 100%;
+    position: relative;
+    overflow: hidden;
 }
 
-.board-scroll::-webkit-scrollbar { width: 4px; height: 4px; }
-.board-scroll::-webkit-scrollbar-track { background: transparent; }
-.board-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+.board-zoomer {
+    position: absolute;
+    transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
 
 .empty-board {
     font-size: 1rem;
@@ -405,16 +397,46 @@
     letter-spacing: 2px;
 }
 
-.board-bone {
-    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
-    animation: placeBone 0.3s ease-out;
-    margin: -1px; /* Slightly overlap to connect the borders cleanly */
-    flex-shrink: 0;
+.abs-bone {
+    filter: drop-shadow(0 4px 6px rgba(0,0,0,0.5));
+    transition: left 0.4s ease, top 0.4s ease, transform 0.4s ease;
+    animation: placeBone 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.abs-drop-zone {
+    position: absolute;
+    width: 60px;
+    height: 60px;
+    background: rgba(46, 204, 113, 0.2);
+    border: 2px dashed #2ecc71;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #2ecc71;
+    font-size: 0.7rem;
+    font-weight: bold;
+    cursor: pointer;
+    text-align: center;
+    animation: dropPulse 1.5s infinite;
+    z-index: 50;
+    transition: all 0.2s;
+}
+
+.abs-drop-zone:hover {
+    background: rgba(46, 204, 113, 0.4);
+    transform: translate(-50%, -50%) scale(1.1) !important;
+}
+
+@keyframes dropPulse {
+    0% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.4); }
+    70% { box-shadow: 0 0 0 15px rgba(46, 204, 113, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0); }
 }
 
 @keyframes placeBone {
-    from { transform: scale(0.75); opacity: 0; }
-    to { transform: scale(1); opacity: 1; }
+    from { transform: translate(-50%, -50%) scale(0.1) rotate(0deg); opacity: 0; }
+    to { /* final transform set by inline style */ opacity: 1; }
 }
 
 /* === PLAYER HAND — bottom tray === */
@@ -450,17 +472,26 @@
     cursor: pointer;
 }
 
+.hand-bone-wrapper.selected {
+    transform: translateY(-20px) scale(1.1);
+    z-index: 20;
+}
+
+.hand-bone-wrapper.selected .domino-tile {
+    box-shadow: 0 10px 25px rgba(46, 204, 113, 0.4), 0 0 0 2px #2ecc71;
+}
+
 .hand-bone-wrapper.draggable { cursor: grab; }
 .hand-bone-wrapper.draggable:active { cursor: grabbing; }
 
-.hand-bone-wrapper:hover {
+.hand-bone-wrapper.draggable:hover:not(.selected) {
     transform: translateY(-10px);
     z-index: 20;
 }
 
 .unplayable-bone {
-    opacity: 0.45;
-    filter: grayscale(80%) contrast(80%);
+    opacity: 0.4;
+    filter: grayscale(100%);
     cursor: not-allowed;
 }
 

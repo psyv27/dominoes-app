@@ -6,6 +6,8 @@ import Room from './pages/Room';
 import Store from './pages/Store';
 import Inventory from './pages/Inventory';
 import Profile from './pages/Profile';
+import Friends from './pages/Friends';
+import Admin from './pages/Admin';
 import './App.css';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -32,6 +34,8 @@ function App() {
         <Route path="/store" element={<ProtectedRoute><Store /></ProtectedRoute>} />
         <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+        <Route path="/friends" element={<ProtectedRoute><Friends /></ProtectedRoute>} />
+        <Route path="/emin/admin" element={<Admin />} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

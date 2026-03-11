@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import Domino from '../components/Domino';
 import { Trophy, SkipForward, LogOut, ArrowLeft } from 'lucide-react';
+import BoardLayout from '../components/BoardLayout';
 import './Gameplay.css';
 
 const ALL_SKINS: Record<string, { name: string; type: string; preview: string; color?: string; bg?: string }> = {
@@ -38,7 +39,22 @@ export default function Gameplay({ room }: any) {
     const [drawingBone, setDrawingBone] = useState(false);
     const [timerSeconds, setTimerSeconds] = useState(0);
     const [timerTotal, setTimerTotal] = useState(10);
+    const [misdealPopup, setMisdealPopup] = useState<string|null>(null);
+    const [quickMsgs, setQuickMsgs] = useState<string[]>([]);
+    const [selectedBone, setSelectedBone] = useState<any>(null); // NEW: Track selected bone for drop zones
     const prevTurnRef = useRef<string|null>(null);
+    const misdealShownRef = useRef(false);
+
+    useEffect(() => {
+        // Fetch custom quick messages from admin panel
+        fetch('http://localhost:4000/api/predefined-messages')
+            .then(res => res.json())
+            .then(data => {
+                if (data && data.length > 0) setQuickMsgs(data);
+                else setQuickMsgs(['Good luck!', 'Bravo!', 'Thanks!', 'Oops!', '😂', '😡', '🔥', '🤔']);
+            })
+            .catch(() => setQuickMsgs(['Good luck!', 'Bravo!', 'Thanks!', 'Oops!', '😂', '😡', '🔥', '🤔']));
+    }, []);
 
     useEffect(() => {
         if (!socket) return;
@@ -48,6 +64,13 @@ export default function Gameplay({ room }: any) {
             if (state.state === 'playing') {
                 setRoundOverData(null);
                 setMatchOverData(null);
+            }
+
+            // Show misdeal popup once when game starts with re-deals
+            if (state.misdealCount > 0 && !misdealShownRef.current) {
+                misdealShownRef.current = true;
+                setMisdealPopup(`Misdeal detected! Re-dealt ${state.misdealCount} time${state.misdealCount > 1 ? 's' : ''}.`);
+                setTimeout(() => setMisdealPopup(null), 3500);
             }
 
             // Show turn popup when turn changes
@@ -189,27 +212,88 @@ export default function Gameplay({ room }: any) {
     const nextRound = () => socket.emit('nextRound', room.id);
     const handleLeaveGame = () => { socket.emit('leaveRoom'); navigate('/lobby'); };
 
-    const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOver(true); };
-    const handleDragLeave = () => setDragOver(false);
-    const handleDrop = (e: React.DragEvent) => {
-        e.preventDefault(); setDragOver(false);
-        try { smartPlayBone(JSON.parse(e.dataTransfer.getData('text/plain'))); } catch {}
-    };
     const handleDragStart = (e: React.DragEvent, bone: any) => {
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', JSON.stringify(bone));
+        setSelectedBone(bone);
+    };
+
+    const handleBoneSelect = (bone: any) => {
+        if (!isMyTurn) return;
+        // Toggle off if already selected
+        if (selectedBone && selectedBone.left === bone.left && selectedBone.right === bone.right) {
+            setSelectedBone(null);
+            return;
+        }
+
+        // Check if playable
+        if (gameState.board.length === 0) {
+            // Can play anywhere
+            socket.emit('playBone', { roomId: room.id, bone, end: 'right' });
+            setSelectedBone(null);
+            return;
+        }
+
+        const leftEnd = gameState.board[0].left;
+        const rightEnd = gameState.board[gameState.board.length - 1].right;
+        const canLeft = bone.left === leftEnd || bone.right === leftEnd;
+        const canRight = bone.left === rightEnd || bone.right === rightEnd;
+
+        if (!canLeft && !canRight) return;
+
+        // If it can ONLY be played on one side, auto-play it
+        if (canLeft && !canRight) {
+            socket.emit('playBone', { roomId: room.id, bone, end: 'left' });
+            setSelectedBone(null);
+        } else if (!canLeft && canRight) {
+            socket.emit('playBone', { roomId: room.id, bone, end: 'right' });
+            setSelectedBone(null);
+        } else if (canLeft && canRight) {
+            // if both sides are playable AND ends are the same number, just play right
+            if (leftEnd === rightEnd) {
+                socket.emit('playBone', { roomId: room.id, bone, end: 'right' });
+                setSelectedBone(null);
+            } else {
+                // otherwise select it to show drop zones
+                setSelectedBone(bone);
+            }
+        }
+    };
+
+    const handlePlayLeft = () => {
+        if (selectedBone) socket.emit('playBone', { roomId: room.id, bone: selectedBone, end: 'left' });
+        setSelectedBone(null);
+    };
+
+    const handlePlayRight = () => {
+        if (selectedBone) socket.emit('playBone', { roomId: room.id, bone: selectedBone, end: 'right' });
+        setSelectedBone(null);
+    };
+
+    const handleDropLeft = (e: React.DragEvent) => {
+        e.preventDefault();
+        setDragOver(false);
+        try {
+            const bone = JSON.parse(e.dataTransfer.getData('text/plain'));
+            socket.emit('playBone', { roomId: room.id, bone, end: 'left' });
+        } catch {}
+        setSelectedBone(null);
+    };
+
+    const handleDropRight = (e: React.DragEvent) => {
+        e.preventDefault();
+        setDragOver(false);
+        try {
+            const bone = JSON.parse(e.dataTransfer.getData('text/plain'));
+            socket.emit('playBone', { roomId: room.id, bone, end: 'right' });
+        } catch {}
+        setSelectedBone(null);
     };
 
     const sendEmoji = (emoji: string) => {
         socket.emit('sendEmoji', { roomId: room.id, emoji, senderId: socket.id });
         setShowEmojiMenu(false);
     };
-
-    const QUICK_MSGS = [
-        'Good luck!', 'Bravo!', 'Thanks!', 'Oops!', 
-        'Dınqıldadassan', 'Keşdi', 'Gəl görüm kukuş',
-        '😂', '😡', '🔥', '🤔'
-    ];
 
     // Match Over
     if (matchOverData) {
@@ -328,6 +412,16 @@ export default function Gameplay({ room }: any) {
                 </div>
             )}
 
+            {/* Misdeal popup */}
+            {misdealPopup && (
+                <div className="blocked-popup" style={{ background: 'rgba(155, 89, 182, 0.95)' }}>
+                    <div className="blocked-popup-inner" style={{ background: 'transparent', boxShadow: 'none' }}>
+                        <span className="blocked-icon">🔄</span>
+                        <span>{misdealPopup}</span>
+                    </div>
+                </div>
+            )}
+
             {/* Minimal header — no turn text */}
             <header className="game-header">
                 <button className="leave-game-btn" onClick={handleLeaveGame} title="Leave Game">
@@ -414,27 +508,16 @@ export default function Gameplay({ room }: any) {
                     );
                 })}
 
-                {/* Board */}
-                <div 
-                    className={`board-area ${dragOver ? 'board-drag-over' : ''}`}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                >
-                    <div className="board-scroll">
-                        {gameState.board.length === 0 ? (
-                            <div className="empty-board">
-                                {isMyTurn ? 'Play a bone to start!' : 'Waiting...'}
-                            </div>
-                        ) : (
-                            gameState.board.map((bone: any, idx: number) => (
-                                <div key={idx} className="board-bone">
-                                    <Domino bone={bone} isHorizontal={bone.left !== bone.right} />
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
+                {/* Board Layout (Snake Algorithm) */}
+                <BoardLayout 
+                    board={gameState.board}
+                    selectedBone={selectedBone}
+                    isMyTurn={isMyTurn}
+                    onPlayLeft={handlePlayLeft}
+                    onPlayRight={handlePlayRight}
+                    onDropLeft={handleDropLeft}
+                    onDropRight={handleDropRight}
+                />
 
                 {/* You — bottom */}
                 <div className={`player-seat seat-bottom ${isMyTurn ? 'is-active-turn' : ''}`}>
@@ -483,17 +566,20 @@ export default function Gameplay({ room }: any) {
                             isPlayable = bone.left === leftEnd || bone.right === leftEnd || bone.left === rightEnd || bone.right === rightEnd;
                         }
 
+                        const isSelected = selectedBone && selectedBone.left === bone.left && selectedBone.right === bone.right;
+
                         return (
                             <div 
                                 key={idx} 
-                                className={`hand-bone-wrapper ${isMyTurn && isPlayable ? 'draggable' : ''} ${isMyTurn && !isPlayable ? 'unplayable-bone' : ''}`}
+                                className={`hand-bone-wrapper ${isMyTurn && isPlayable ? 'draggable' : ''} ${isMyTurn && !isPlayable ? 'unplayable-bone' : ''} ${isSelected ? 'selected' : ''}`}
                                 draggable={isMyTurn && isPlayable}
                                 onDragStart={(e) => isMyTurn && isPlayable && handleDragStart(e, bone)}
+                                onDragEnd={() => setSelectedBone(null)}
                             >
                                 <Domino
                                     bone={bone}
                                     isInteractive={isMyTurn && isPlayable}
-                                    onClick={() => { if (isMyTurn && isPlayable) smartPlayBone(bone); }}
+                                    onClick={() => handleBoneSelect(bone)}
                                 />
                             </div>
                         );
@@ -511,7 +597,7 @@ export default function Gameplay({ room }: any) {
                 </button>
                 {showEmojiMenu && (
                     <div className="quick-chat-menu">
-                        {QUICK_MSGS.map((msg, i) => (
+                        {quickMsgs.map((msg, i) => (
                             <button key={i} className="qc-btn" onClick={() => sendEmoji(msg)}>
                                 {msg}
                             </button>

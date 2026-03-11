@@ -7,9 +7,11 @@ const fs = require('fs');
 require('dotenv').config();
 
 const authRoutes = require('./routes/auth');
+const adminRoutes = require('./routes/admin');
 const RoomManager = require('./RoomManager');
 const DominoGame = require('./game');
 const BotAI = require('./BotAI');
+const db = require('./db');
 
 const app = express();
 app.use(cors({
@@ -17,9 +19,17 @@ app.use(cors({
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+const userSocketMap = {}; // Maps userId -> socketId
+const socketUserMap = {}; // Maps socketId -> userId
 app.use(express.json());
 
 app.use('/auth', authRoutes);
+app.use('/admin', adminRoutes);
+
+app.get('/api/predefined-messages', (req, res) => {
+    res.json(db.predefinedMessages);
+});
 
 // Serve frontend static files in production (when frontend/dist exists)
 const frontendDist = path.join(__dirname, '..', 'frontend', 'dist');
@@ -130,6 +140,11 @@ function handleRoundEnd(roomId, result) {
     // Increment points
     const winnerScore = result.winnerScore || 0;
     room.scores[result.winner] = (room.scores[result.winner] || 0) + winnerScore;
+
+    // Save previous winner info for next round
+    room.lastRoundWinner = result.winner;
+    room.lastPlayerToMove = room.game.lastPlayerToMove;
+    room.currentRoundNumber++;
 
     // Increment round wins for Best Of formats
     if (result.winner) {
@@ -253,6 +268,15 @@ function executeBotTurn(roomId, botId) {
 // ---- SOCKET EVENTS ----
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
+    
+    // Register user ID for presence/invites
+    socket.on('registerUser', (userId) => {
+        if (userId) {
+            userSocketMap[userId] = socket.id;
+            socketUserMap[socket.id] = userId;
+        }
+    });
+
     socket.emit('roomsUpdated', roomManager.getPublicRooms());
 
     // --- LOBBY ---
@@ -340,12 +364,30 @@ io.on('connection', (socket) => {
     });
 
     socket.on('chatMessage', (data) => {
+        if (data) {
+            if (data.text) data.text = db.filterMessage(data.text);
+            if (data.message) data.message = db.filterMessage(data.message);
+        }
         io.to(data.roomId).emit('chatMessage', data);
     });
 
     socket.on('sendEmoji', (data) => {
         // data: { roomId, emoji, senderId }
         io.to(data.roomId).emit('emojiReceived', data);
+    });
+
+    // Handle game invites
+    socket.on('inviteToGame', ({ toId, roomId }) => {
+        const targetSocketId = userSocketMap[toId];
+        const senderUserId = socketUserMap[socket.id];
+        if (targetSocketId && senderUserId) {
+            const senderUser = db.users.find(u => u.id === senderUserId);
+            io.to(targetSocketId).emit('gameInvite', {
+                roomId,
+                fromId: senderUserId,
+                fromNickname: senderUser ? senderUser.nickname : 'A friend'
+            });
+        }
     });
 
     socket.on('kickPlayer', ({ roomId, targetSocketId }) => {
@@ -418,8 +460,8 @@ io.on('connection', (socket) => {
 
         room.currentRoundNumber++;
         room.state = 'playing';
-        // Create fresh game instance with updated round number
-        room.game = new DominoGame(room.gameMode, room.teamMode, room.matchFormat, room.currentRoundNumber);
+        // Create fresh game instance with updated round number and previous winners
+        room.game = new DominoGame(room.gameMode, room.teamMode, room.matchFormat, room.currentRoundNumber, room.lastRoundWinner, room.lastPlayerToMove);
         
         // Add all players FIRST, then start the game
         Object.keys(room.players).forEach(id => {
@@ -459,8 +501,36 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('nextRound', ({ roomId }) => {
+        const room = roomManager.getRoom(roomId);
+        if (!room || room.hostId !== socket.id) return;
+        
+        // Only start next round if current one is finished
+        if (room.game && room.game.state === 'finished') {
+            const result = roomManager.startGame(roomId);
+            if (result.error) {
+                socket.emit('error', result.error);
+            } else {
+                io.to(roomId).emit('gameStarted', room);
+                setTimeout(() => {
+                    broadcastGameState(roomId);
+                    startTurnTimer(roomId);
+                    scheduleBotTurn(roomId);
+                }, 500);
+            }
+        }
+    });
+
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
+        
+        // Clean up socket map
+        const userId = socketUserMap[socket.id];
+        if (userId) {
+            delete userSocketMap[userId];
+            delete socketUserMap[socket.id];
+        }
+
         const result = roomManager.leaveRoom(socket.id);
         if (result && result.room) {
             const { room, destroyed, aborted } = result;
@@ -494,7 +564,8 @@ function getGameStateForPlayer(roomId, socketId) {
         hand: game.players[socketId]?.hand || [],
         opponents: getOpponents(roomId, socketId),
         scores: room.scores,
-        turnTimer: room.turnTimer
+        turnTimer: room.turnTimer,
+        misdealCount: game.misdealCount || 0
     };
 }
 
@@ -521,7 +592,7 @@ function broadcastGameState(roomId) {
     });
 }
 
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });

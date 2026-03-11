@@ -140,4 +140,130 @@ router.put('/profile', async (req, res) => {
     }
 });
 
+// ==========================================
+// FRIENDS & BLOCK SYSTEM ENDPOINTS
+// ==========================================
+
+// Search users by exact username
+router.get('/search', async (req, res) => {
+    const { username } = req.query;
+    if (!username) return res.json([]);
+    const result = await db.query('SELECT * FROM Users WHERE username = $1', [username]);
+    if (result.rows.length === 0) return res.json([]);
+    const u = result.rows[0];
+    res.json([{ id: u.id, username: u.username, nickname: u.nickname, avatar: u.avatar }]);
+});
+
+// Get user's social data (friends, requests, blocked)
+router.get('/social', (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
+    const token = authHeader.split(' ')[1];
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const userId = decoded.id;
+        
+        res.json({
+            friends: db.getFriends(userId),
+            pendingRequests: db.getPendingRequests(userId),
+            sentRequests: db.getSentRequests(userId),
+            blocked: db.getBlockedByUser(userId)
+        });
+    } catch(err) {
+        res.status(401).json({ error: 'Invalid token' });
+    }
+});
+
+// Send Friend Request
+router.post('/friend-request', (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
+    const token = authHeader.split(' ')[1];
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const { toId } = req.body;
+        if (!toId || toId === decoded.id) return res.status(400).json({ error: 'Invalid target' });
+        
+        const result = db.sendFriendRequest(decoded.id, toId);
+        if (result.error) return res.status(400).json(result);
+        res.json(result);
+    } catch(err) {
+        res.status(401).json({ error: 'Invalid token' });
+    }
+});
+
+// Accept Friend Request
+router.post('/friend-request/:id/accept', (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
+    try {
+        const result = db.acceptFriendRequest(req.params.id);
+        if (result.error) return res.status(400).json(result);
+        res.json(result);
+    } catch(err) {
+        res.status(401).json({ error: 'Invalid token' });
+    }
+});
+
+// Reject/Cancel Friend Request or Remove Friend
+router.delete('/friend-request/:id', (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
+    try {
+        const result = db.rejectFriendRequest(req.params.id);
+        if (result.error) return res.status(400).json(result);
+        res.json(result);
+    } catch(err) {
+        res.status(401).json({ error: 'Invalid token' });
+    }
+});
+
+// Remove Friend (by user ID)
+router.delete('/friends/:id', (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
+    const token = authHeader.split(' ')[1];
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const result = db.removeFriend(decoded.id, req.params.id);
+        if (result.error) return res.status(400).json(result);
+        res.json(result);
+    } catch(err) {
+        res.status(401).json({ error: 'Invalid token' });
+    }
+});
+
+// Block User
+router.post('/block', (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
+    const token = authHeader.split(' ')[1];
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const { blockedId } = req.body;
+        if (!blockedId || blockedId === decoded.id) return res.status(400).json({ error: 'Invalid target' });
+        
+        const result = db.blockUser(decoded.id, blockedId);
+        if (result.error) return res.status(400).json(result);
+        res.json(result);
+    } catch(err) {
+        res.status(401).json({ error: 'Invalid token' });
+    }
+});
+
+// Unblock User
+router.delete('/block/:id', (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
+    const token = authHeader.split(' ')[1];
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const result = db.unblockUser(decoded.id, req.params.id);
+        if (result.error) return res.status(400).json(result);
+        res.json(result);
+    } catch(err) {
+        res.status(401).json({ error: 'Invalid token' });
+    }
+});
+
 module.exports = router;

@@ -5,22 +5,20 @@ const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
-    const [user, setUser] = useState(null); // null means not logged in
-    const [loading, setLoading] = useState(false); // Can be used for fetching /me
+    // Initialize user synchronously to prevent early redirects on refresh
+    const [user, setUser] = useState(() => {
+        const storedUser = localStorage.getItem('user');
+        return storedUser ? JSON.parse(storedUser) : null;
+    });
+    const [loading, setLoading] = useState(false);
 
     useEffect(() => {
         // Here we could fetch /me from the backend if we have a token
-        const token = localStorage.getItem('token');
-        const storedUser = localStorage.getItem('user');
-
-        if (token && storedUser) {
-            setUser(JSON.parse(storedUser));
-        }
     }, []);
 
     const login = async (username, password) => {
         try {
-            const res = await fetch('http://localhost:5001/auth/login', {
+            const res = await fetch('http://localhost:4000/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password })
@@ -42,7 +40,7 @@ export const AuthProvider = ({ children }) => {
 
     const register = async (username, password, nickname) => {
         try {
-            const res = await fetch('http://localhost:5001/auth/register', {
+            const res = await fetch('http://localhost:4000/auth/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password, nickname })

@@ -154,7 +154,14 @@ class RoomManager {
         if (playerIds.length < 2) return { error: 'Need at least 2 players' };
 
         room.state = 'playing';
-        room.game = new DominoGame(room.gameMode, room.teamMode, room.matchFormat, room.currentRoundNumber);
+        room.game = new DominoGame(
+            room.gameMode, 
+            room.teamMode, 
+            room.matchFormat, 
+            room.currentRoundNumber,
+            room.lastRoundWinner,
+            room.lastPlayerToMove
+        );
         
         playerIds.forEach(id => {
             room.scores[id] = room.scores[id] || 0;

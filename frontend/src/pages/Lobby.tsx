@@ -108,6 +108,9 @@ export default function Lobby() {
                     </div>
                 </div>
                 <div className="lobby-nav">
+                    <button className="nav-btn" onClick={() => navigate('/friends')}>
+                        <Users size={18} /> Friends
+                    </button>
                     <button className="nav-btn" onClick={() => navigate('/store')}>
                         <ShoppingBag size={18} /> Store
                     </button>
