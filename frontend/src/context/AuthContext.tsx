@@ -20,7 +20,7 @@ export const AuthProvider = ({ children }) => {
 
     const login = async (username, password) => {
         try {
-            const res = await fetch('https://dominoes-appback.onrender.com/auth/login', {
+            const res = await fetch('http://localhost:5001/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password })
@@ -42,7 +42,7 @@ export const AuthProvider = ({ children }) => {
 
     const register = async (username, password, nickname) => {
         try {
-            const res = await fetch('https://dominoes-appback.onrender.com/auth/register', {
+            const res = await fetch('http://localhost:5001/auth/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password, nickname })
