@@ -1,54 +1,107 @@
-const { Client } = require('pg');
-require('dotenv').config();
+const sql = require('mssql');
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
-const client = new Client({
-  connectionString: process.env.DATABASE_URL,
-});
+const config = {
+  server: process.env.DB_SERVER,
+  port: Number(process.env.DB_PORT || 1433),
+  database: process.env.DB_NAME,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  connectionTimeout: Number(process.env.DB_CONNECTION_TIMEOUT || 60000),
+  requestTimeout: Number(process.env.DB_REQUEST_TIMEOUT || 60000),
+  options: {
+    encrypt: (process.env.DB_ENCRYPT || 'true') === 'true',
+    trustServerCertificate: (process.env.DB_TRUST_SERVER_CERTIFICATE || 'false') === 'true'
+  }
+};
 
 const initSql = `
-CREATE TABLE IF NOT EXISTS Users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    username VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255),
-    nickname VARCHAR(255) NOT NULL,
-    xp INTEGER DEFAULT 0,
-    rank_level INTEGER DEFAULT 1,
-    total_wins INTEGER DEFAULT 0,
-    total_games INTEGER DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+IF OBJECT_ID(N'dbo.Users', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.Users (
+        id UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_Users PRIMARY KEY DEFAULT NEWID(),
+        username NVARCHAR(255) NOT NULL CONSTRAINT UQ_Users_Username UNIQUE,
+        password_hash NVARCHAR(255) NULL,
+        nickname NVARCHAR(255) NOT NULL,
+        avatar NVARCHAR(2048) NULL,
+        xp INT NOT NULL CONSTRAINT DF_Users_Xp DEFAULT 0,
+        rank_level INT NOT NULL CONSTRAINT DF_Users_RankLevel DEFAULT 1,
+        total_wins INT NOT NULL CONSTRAINT DF_Users_TotalWins DEFAULT 0,
+        total_games INT NOT NULL CONSTRAINT DF_Users_TotalGames DEFAULT 0,
+        created_at DATETIME2 NOT NULL CONSTRAINT DF_Users_CreatedAt DEFAULT GETDATE()
+    );
+END;
 
-CREATE TABLE IF NOT EXISTS GameHistory (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    room_id VARCHAR(255),
-    game_mode VARCHAR(50),
-    team_mode VARCHAR(50),
-    winner_id UUID REFERENCES Users(id),
-    winning_score INTEGER,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+IF COL_LENGTH('dbo.Users', 'avatar') IS NULL
+BEGIN
+    ALTER TABLE dbo.Users ADD avatar NVARCHAR(2048) NULL;
+END;
 
-CREATE TABLE IF NOT EXISTS PlayerGameStats (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    game_id UUID REFERENCES GameHistory(id),
-    player_id UUID REFERENCES Users(id),
-    score INTEGER,
-    tiles_remaining INTEGER,
-    is_winner BOOLEAN,
-    xp_earned INTEGER
-);
+IF COL_LENGTH('dbo.Users', 'xp') IS NULL
+BEGIN
+    ALTER TABLE dbo.Users ADD xp INT NOT NULL CONSTRAINT DF_Users_Xp_Migration DEFAULT 0;
+END;
+
+IF COL_LENGTH('dbo.Users', 'rank_level') IS NULL
+BEGIN
+    ALTER TABLE dbo.Users ADD rank_level INT NOT NULL CONSTRAINT DF_Users_RankLevel_Migration DEFAULT 1;
+END;
+
+IF COL_LENGTH('dbo.Users', 'total_wins') IS NULL
+BEGIN
+    ALTER TABLE dbo.Users ADD total_wins INT NOT NULL CONSTRAINT DF_Users_TotalWins_Migration DEFAULT 0;
+END;
+
+IF COL_LENGTH('dbo.Users', 'total_games') IS NULL
+BEGIN
+    ALTER TABLE dbo.Users ADD total_games INT NOT NULL CONSTRAINT DF_Users_TotalGames_Migration DEFAULT 0;
+END;
+
+IF OBJECT_ID(N'dbo.GameHistory', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.GameHistory (
+        id UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_GameHistory PRIMARY KEY DEFAULT NEWID(),
+        room_id NVARCHAR(255) NULL,
+        game_mode NVARCHAR(50) NULL,
+        team_mode NVARCHAR(50) NULL,
+        winner_id UNIQUEIDENTIFIER NULL,
+        winning_score INT NULL,
+        created_at DATETIME2 NOT NULL CONSTRAINT DF_GameHistory_CreatedAt DEFAULT GETDATE(),
+        CONSTRAINT FK_GameHistory_Winner FOREIGN KEY (winner_id) REFERENCES dbo.Users(id)
+    );
+END;
+
+IF OBJECT_ID(N'dbo.PlayerGameStats', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.PlayerGameStats (
+        id UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_PlayerGameStats PRIMARY KEY DEFAULT NEWID(),
+        game_id UNIQUEIDENTIFIER NULL,
+        player_id UNIQUEIDENTIFIER NULL,
+        score INT NULL,
+        tiles_remaining INT NULL,
+        is_winner BIT NULL,
+        xp_earned INT NULL,
+        CONSTRAINT FK_PlayerGameStats_Game FOREIGN KEY (game_id) REFERENCES dbo.GameHistory(id),
+        CONSTRAINT FK_PlayerGameStats_Player FOREIGN KEY (player_id) REFERENCES dbo.Users(id)
+    );
+END;
 `;
 
 async function initDB() {
+  let pool;
+
   try {
-    console.log('Running init_db.js with Client connection...');
-    await client.connect();
-    await client.query(initSql);
+    console.log('Running init_db.js with SQL Server connection...');
+    pool = await sql.connect(config);
+    await pool.request().batch(initSql);
     console.log('Database tables created/migrated successfully.');
   } catch (err) {
     console.error('Error creating database tables:', err);
   } finally {
-    await client.end();
+    if (pool) {
+      await pool.close();
+    }
   }
 }
 
