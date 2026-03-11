@@ -8,6 +8,7 @@ require('dotenv').config();
 
 const authRoutes = require('./routes/auth');
 const RoomManager = require('./RoomManager');
+const DominoGame = require('./game');
 const BotAI = require('./BotAI');
 
 const app = express();
@@ -412,23 +413,24 @@ io.on('connection', (socket) => {
 
     socket.on('nextRound', (roomId) => {
         const room = roomManager.getRoom(roomId);
-        if (room && room.hostId === socket.id && room.state !== 'finished') {
-            room.currentRoundNumber++;
-            // Pass the updated round number
-            room.game = new DominoGame(room.gameMode, room.teamMode, room.matchFormat, room.currentRoundNumber);
-            room.game.startGame();
-            
-            // Re-add players to the new game instance
-            Object.keys(room.players).forEach(id => {
-                room.game.addPlayer(id);
-            });
-            room.game.startGame();
+        if (!room || room.hostId !== socket.id) return;
+        if (room.state === 'finished') return;
 
-            io.to(roomId).emit('gameStarted', room);
-            broadcastGameState(roomId);
-            startTurnTimer(roomId);
-            scheduleBotTurn(roomId);
-        }
+        room.currentRoundNumber++;
+        room.state = 'playing';
+        // Create fresh game instance with updated round number
+        room.game = new DominoGame(room.gameMode, room.teamMode, room.matchFormat, room.currentRoundNumber);
+        
+        // Add all players FIRST, then start the game
+        Object.keys(room.players).forEach(id => {
+            room.game.addPlayer(id);
+        });
+        room.game.startGame();
+
+        io.to(roomId).emit('gameStarted', room);
+        broadcastGameState(roomId);
+        startTurnTimer(roomId);
+        scheduleBotTurn(roomId);
     });
 
     socket.on('drawBone', (roomId) => {
@@ -519,7 +521,7 @@ function broadcastGameState(roomId) {
     });
 }
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 5001;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });

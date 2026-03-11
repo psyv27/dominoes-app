@@ -353,7 +353,7 @@ export default function Gameplay({ room }: any) {
             </header>
 
             {/* TABLE with players around */}
-            <div className="table-wrapper" style={{ backgroundImage: tableSkin.bg || 'radial-gradient(circle, #111118, #050508)' }}>
+            <div className="table-wrapper" style={{ background: tableSkin.bg || 'radial-gradient(circle, #111118, #050508)' }}>
                 {/* Opponent seats */}
                 {opponents.map(([id, count], idx) => {
                     const player = room.players[id];
@@ -400,8 +400,7 @@ export default function Gameplay({ room }: any) {
                                         <Domino 
                                             bone={{ left: 0, right: 0 }} 
                                             faceDown 
-                                            skinUrl={oppSkinData?.preview}
-                                            skinColor={player?.botColor || oppSkinData?.color || '#1f2937'}
+                                            skinColor={player?.botColor || oppSkinData?.preview || '#1f2937'}
                                         />
                                     </div>
                                 ))}
@@ -495,8 +494,6 @@ export default function Gameplay({ room }: any) {
                                     bone={bone}
                                     isInteractive={isMyTurn && isPlayable}
                                     onClick={() => { if (isMyTurn && isPlayable) smartPlayBone(bone); }}
-                                    skinUrl={myDominoSkin?.preview}
-                                    skinColor={myDominoSkin?.color}
                                 />
                             </div>
                         );

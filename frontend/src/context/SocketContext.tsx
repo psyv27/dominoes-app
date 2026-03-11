@@ -5,8 +5,8 @@ const SocketContext = createContext();
 
 export const useSocket = () => useContext(SocketContext);
 
-// Connecting to the backend on port 5000
-const socket = io('https://dominoes-appback.onrender.com', {
+// Connecting to the backend
+const socket = io('http://localhost:5001', {
     autoConnect: false // Connect manually when context mounts
 });
 
