@@ -1,6 +1,15 @@
 const DominoGame = require('./game');
 const { v4: uuidv4 } = require('uuid');
 
+function generateInviteCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    for (let i = 0; i < 6; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+}
+
 class RoomManager {
     constructor() {
         this.rooms = {}; // roomId -> room object
@@ -19,10 +28,12 @@ class RoomManager {
             teamMode: settings.teamMode || 'Free For All',
             matchFormat: settings.matchFormat || 'Score', // 'Score', 'Best of 1', 'Best of 3', 'Best of 5'
             targetScore: settings.targetScore || 100, // Only used if matchFormat === 'Score'
+            entryFee: Math.max(20, settings.entryFee || 20), // Minimum 20 coins fee
             turnTimer: Math.max(10, Math.min(60, settings.turnTimer || 10)), // 10-60 seconds
             isSinglePlayer: settings.isSinglePlayer || false,
             botDifficulty: settings.botDifficulty || 'normal',
             botCount: settings.botCount || 1, // 1 or 3 bots
+            inviteCode: null,
             state: 'waiting',
             game: null,
             scores: {},
@@ -30,12 +41,45 @@ class RoomManager {
             currentRoundNumber: 1
         };
 
+        // Handle invite code for Private rooms
+        if (room.roomType === 'Private') {
+            if (room.isSinglePlayer) {
+                let code;
+                do {
+                    code = generateInviteCode();
+                } while (Object.values(this.rooms).some(r => r.inviteCode === code));
+                room.inviteCode = code;
+            } else {
+                if (settings.inviteCode) {
+                    const code = String(settings.inviteCode).trim().toUpperCase();
+                    if (code.length < 4) {
+                        return { error: 'Private room code must be at least 4 characters long.' };
+                    }
+                    if (Object.values(this.rooms).some(r => r.inviteCode === code)) {
+                        return { error: 'This room code is already in use. Please choose another one.' };
+                    }
+                    room.inviteCode = code;
+                } else {
+                    return { error: 'Private rooms require a room code.' };
+                }
+            }
+        }
+
         this.rooms[roomId] = room;
-        return roomId;
+        return { roomId };
     }
 
     getRoom(roomId) {
         return this.rooms[roomId];
+    }
+
+    findRoomByInviteCode(code) {
+        if (!code) return null;
+        const upperCode = code.toUpperCase();
+        const entry = Object.entries(this.rooms).find(
+            ([, room]) => room.inviteCode === upperCode
+        );
+        return entry ? entry[0] : null;
     }
 
     getPublicRooms() {
@@ -170,6 +214,37 @@ class RoomManager {
         });
 
         room.game.startGame();
+        return { success: true, room };
+    }
+
+    /**
+     * Start a game with animated dealing (hands start empty, deal order generated).
+     * Used by the new interactive dealing flow.
+     */
+    startGameWithDealing(roomId) {
+        const room = this.rooms[roomId];
+        if (!room) return { error: 'Room not found' };
+        
+        const playerIds = Object.keys(room.players);
+        if (playerIds.length < 2) return { error: 'Need at least 2 players' };
+
+        room.state = 'playing';
+        room.game = new DominoGame(
+            room.gameMode, 
+            room.teamMode, 
+            room.matchFormat, 
+            room.currentRoundNumber,
+            room.lastRoundWinner,
+            room.lastPlayerToMove
+        );
+        
+        playerIds.forEach(id => {
+            room.scores[id] = room.scores[id] || 0;
+            room.roundWins[id] = room.roundWins[id] || 0;
+            room.game.addPlayer(id);
+        });
+
+        room.game.prepareGame();
         return { success: true, room };
     }
 

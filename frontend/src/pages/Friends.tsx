@@ -22,7 +22,7 @@ export default function Friends() {
     const [searchError, setSearchError] = useState('');
 
     const token = localStorage.getItem('token');
-    const API_URL = 'http://localhost:4000/auth';
+    const API_URL = 'http://localhost:5001/auth';
 
     const loadSocialData = async () => {
         try {

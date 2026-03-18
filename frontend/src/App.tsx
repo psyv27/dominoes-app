@@ -18,6 +18,17 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+const RegisteredRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user } = useAuth() as any;
+  if (!user) {
+    return <Navigate to="/" replace />;
+  }
+  if (user.isGuest) {
+    return <Navigate to="/lobby" replace />;
+  }
+  return <>{children}</>;
+};
+
 function App() {
   const { user } = useAuth() as any;
 
@@ -31,8 +42,8 @@ function App() {
         
         <Route path="/lobby" element={<ProtectedRoute><Lobby /></ProtectedRoute>} />
         <Route path="/room/:id" element={<ProtectedRoute><Room /></ProtectedRoute>} />
-        <Route path="/store" element={<ProtectedRoute><Store /></ProtectedRoute>} />
-        <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
+        <Route path="/store" element={<RegisteredRoute><Store /></RegisteredRoute>} />
+        <Route path="/inventory" element={<RegisteredRoute><Inventory /></RegisteredRoute>} />
         <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
         <Route path="/friends" element={<ProtectedRoute><Friends /></ProtectedRoute>} />
         <Route path="/emin/admin" element={<Admin />} />

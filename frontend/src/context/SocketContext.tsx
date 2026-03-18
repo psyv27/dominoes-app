@@ -6,7 +6,7 @@ const SocketContext = createContext();
 export const useSocket = () => useContext(SocketContext);
 
 // Connecting to the backend
-const socket = io('http://localhost:4000', {
+const socket = io('http://localhost:5001', {
     autoConnect: false // Connect manually when context mounts
 });
 

@@ -18,7 +18,7 @@ export const AuthProvider = ({ children }) => {
 
     const login = async (username, password) => {
         try {
-            const res = await fetch('http://localhost:4000/auth/login', {
+            const res = await fetch('http://localhost:5001/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password })
@@ -30,6 +30,8 @@ export const AuthProvider = ({ children }) => {
                 localStorage.setItem('user', JSON.stringify(data.user));
                 setUser(data.user);
                 return { success: true };
+            } else if (res.status === 403 && data.error === 'pending_verification') {
+                return { success: false, pending_verification: true, error: data.error, email: data.email };
             } else {
                 return { success: false, error: data.error };
             }
@@ -38,14 +40,37 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
-    const register = async (username, password, nickname) => {
+    const register = async (email, username, password, nickname) => {
         try {
-            const res = await fetch('http://localhost:4000/auth/register', {
+            const res = await fetch('http://localhost:5001/auth/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password, nickname })
+                body: JSON.stringify({ email, username, password, nickname })
             });
 
+            const data = await res.json();
+            if (res.status === 202 && data.status === 'pending_verification') {
+                return { success: true, pending_verification: true, email: data.email };
+            } else if (res.ok) {
+                localStorage.setItem('token', data.token);
+                localStorage.setItem('user', JSON.stringify(data.user));
+                setUser(data.user);
+                return { success: true };
+            } else {
+                return { success: false, error: data.error };
+            }
+        } catch (err) {
+            return { success: false, error: 'Network error' };
+        }
+    };
+
+    const verifyOtp = async (email, otp) => {
+        try {
+            const res = await fetch('http://localhost:5001/auth/verify-otp', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, otp })
+            });
             const data = await res.json();
             if (res.ok) {
                 localStorage.setItem('token', data.token);
@@ -60,14 +85,68 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
-    const playAsGuest = () => {
-        const guestId = Math.floor(1000 + Math.random() * 9000);
-        const guestUser = {
-            id: `guest-${guestId}`,
-            nickname: `Guest${guestId}`,
-            isGuest: true
-        };
-        setUser(guestUser);
+    const forgotPassword = async (email) => {
+        try {
+            const res = await fetch('http://localhost:5001/auth/forgot-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email })
+            });
+            const data = await res.json();
+            return res.ok ? { success: true } : { success: false, error: data.error };
+        } catch (err) {
+            return { success: false, error: 'Network error' };
+        }
+    };
+
+    const resetPassword = async (email, otp, newPassword) => {
+        try {
+            const res = await fetch('http://localhost:5001/auth/reset-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, otp, newPassword })
+            });
+            const data = await res.json();
+            return res.ok ? { success: true } : { success: false, error: data.error };
+        } catch (err) {
+            return { success: false, error: 'Network error' };
+        }
+    };
+
+    const playAsGuest = async () => {
+        let deviceId = localStorage.getItem('guest_device_id');
+        if (!deviceId) {
+            deviceId = crypto.randomUUID ? crypto.randomUUID() : 'guest_' + Math.random().toString(36).substring(2);
+            localStorage.setItem('guest_device_id', deviceId);
+        }
+
+        try {
+            const res = await fetch('http://localhost:5001/auth/guest', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ device_id: deviceId })
+            });
+
+            const data = await res.json();
+            if (res.ok) {
+                localStorage.setItem('token', data.token);
+                localStorage.setItem('user', JSON.stringify(data.user));
+                setUser(data.user);
+            } else {
+                console.error("Guest login failed:", data.error);
+            }
+        } catch (err) {
+            console.error('Network error during guest login');
+        }
+    };
+
+    const updateUser = (updates: any) => {
+        setUser((prev: any) => {
+            if (!prev) return null;
+            const nextUser = { ...prev, ...updates };
+            localStorage.setItem('user', JSON.stringify(nextUser));
+            return nextUser;
+        });
     };
 
     const logout = () => {
@@ -77,7 +156,10 @@ export const AuthProvider = ({ children }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ user, loading, login, register, playAsGuest, logout }}>
+        <AuthContext.Provider value={{ 
+            user, loading, login, register, verifyOtp, 
+            forgotPassword, resetPassword, playAsGuest, logout, updateUser 
+        }}>
             {children}
         </AuthContext.Provider>
     );

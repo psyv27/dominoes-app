@@ -28,7 +28,7 @@ This project is a real-time multiplayer Dominoes **web application**. It is desi
 
 ## Current State & Features Implemented
 1. **Authentication:** JWT-based login/registration for authorized users, guest play mode.
-2. **Lobby System:** Public rooms list, private room join by code, room creation with custom settings.
+2. **Lobby System:** Public rooms list, private room join by custom password (minimum 4 chars), room creation with custom settings.
 3. **Room System:** Host controls (start game, kick players), team picking (Team 1 / Team 2), chat.
 4. **Game Modes:** Normal, All Fives (multiples of 5 scoring), Blocking Mode.
 5. **Team Modes:** Free For All, Team Mode (2 vs 2).
@@ -38,9 +38,10 @@ This project is a real-time multiplayer Dominoes **web application**. It is desi
 9. **XP & Ranking:** Authorized users earn XP per game, ranks increase automatically based on XP thresholds.
 10. **Store:** Free cosmetic skins (6 domino skins, 6 table backgrounds). Guests cannot access.
 11. **Inventory:** Players can equip owned skins. Equipped skins persist via localStorage. Guests blocked.
-12. **Responsive Web Design:** All pages (Auth, Lobby, Room, Gameplay, Store, Inventory) adapt to desktop, tablet, and phone screen sizes via CSS media queries. This is a web-only application (no PWA/mobile app).
+12. **Responsive Web Design:** All pages adapt to desktop, tablet, and phone screen sizes.
 13. **Opponent Tracking:** Shows opponent bone counts and active turn indicator.
 14. **Round & Match End Screens:** Animated modals showing scores and winners.
+15. **Admin & Moderation:** Admin dashboard for user ban/deletion, chat word filtering, custom UI stickers (Base64 uploads w/ permissions).
 
 ## File Structure
 ```
