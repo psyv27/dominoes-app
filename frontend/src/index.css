@@ -1,4 +1,27 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  /* Color Palette - Premium Tabletop (Mahogany, Felt Green, Gold) */
+  --bg-dark: #16221c;           /* Very dark casino green/black */
+  --bg-card: #202e26;           /* Subtle dark green for cards */
+  --primary: #d4a962;           /* Classic Gold/Brass */
+  --primary-hover: #e8bd78;
+  --accent: #b71c1c;            /* Deep Crimson Red */
+  --accent-hover: #d32f2f;
+  --text-primary: #f5f0e6;      /* Ivory */
+  --text-secondary: #a8b3a0;    /* Pale green/grey text */
+  --success: #2e7d32;
+  --danger: #d32f2f;
+  
+  /* Glassmorphism */
+  --glass-bg: rgba(20, 32, 24, 0.75);
+  --glass-border: rgba(212, 169, 98, 0.15); /* Gold tinted border */
+  --glass-shadow: 0 10px 40px 0 rgba(0, 0, 0, 0.6);
+  
+  /* Transitions */
+  --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
 
 *, *::before, *::after {
   box-sizing: border-box;
@@ -12,10 +35,15 @@ html, body {
   margin: 0;
   padding: 0;
   font-family: 'Inter', system-ui, sans-serif;
-  background-color: #1a120b;
-  color: #f0e8d8;
+  background-color: var(--bg-dark);
+  color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4, .font-heading {
+  font-family: 'Outfit', sans-serif;
 }
 
 #root {
@@ -23,6 +51,62 @@ html, body {
   min-height: 100vh;
 }
 
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-dark);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Glass Utility */
+.glass-effect {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
 button {
   font-family: inherit;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  transition: var(--transition-fast);
+}
+
+input {
+  font-family: inherit;
+}
+
+.premium-gradient {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+  color: #1a120b; /* Dark text for gold background */
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, #fff 0%, var(--primary) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease forwards;
 }

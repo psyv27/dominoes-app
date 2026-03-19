@@ -75,6 +75,115 @@ function translateQuery(queryText) {
   return applyReturningClause(replaceParameters(queryText));
 }
 
+// ── In-Memory Data Stores ────────────────────────────────────────
+// These are referenced by admin.js, auth.js, and index.js.
+// In production, migrate these to persistent DB tables.
+
+const users = [];
+const friendRequests = [];
+const blockedUsers = [];
+const bannedWords = [];
+const predefinedMessages = ['Good game!', 'Nice move!', 'Let\'s play!', 'GG!'];
+const customStickers = []; // Stores { id, name, url, isHidden, allowedUsers: [] }
+
+// ── Chat Filtering ──────────────────────────────────────────────
+
+/**
+ * Replace banned words in a message with asterisks.
+ * @param {string} msg
+ * @returns {string}
+ */
+function filterMessage(msg) {
+  if (!msg || typeof msg !== 'string') return msg;
+  let filtered = msg;
+  for (const word of bannedWords) {
+    const regex = new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    filtered = filtered.replace(regex, '*'.repeat(word.length));
+  }
+  return filtered;
+}
+
+// ── Social / Friends Helpers ────────────────────────────────────
+
+function getFriends(userId) {
+  return friendRequests
+    .filter(r => r.status === 'accepted' && (r.fromId === userId || r.toId === userId))
+    .map(r => {
+      const friendId = r.fromId === userId ? r.toId : r.fromId;
+      const friend = users.find(u => u.id === friendId);
+      return friend ? { id: friend.id, username: friend.username, nickname: friend.nickname, avatar: friend.avatar } : null;
+    })
+    .filter(Boolean);
+}
+
+function getPendingRequests(userId) {
+  return friendRequests.filter(r => r.toId === userId && r.status === 'pending');
+}
+
+function getSentRequests(userId) {
+  return friendRequests.filter(r => r.fromId === userId && r.status === 'pending');
+}
+
+function getBlockedByUser(userId) {
+  return blockedUsers.filter(b => b.blockerId === userId);
+}
+
+function sendFriendRequest(fromId, toId) {
+  const exists = friendRequests.find(r =>
+    (r.fromId === fromId && r.toId === toId) || (r.fromId === toId && r.toId === fromId)
+  );
+  if (exists) return { error: 'Request already exists' };
+  const blocked = blockedUsers.find(b =>
+    (b.blockerId === toId && b.blockedId === fromId)
+  );
+  if (blocked) return { error: 'You are blocked by this user' };
+  const req = { id: `fr-${Date.now()}`, fromId, toId, status: 'pending' };
+  friendRequests.push(req);
+  return { success: true, request: req };
+}
+
+function acceptFriendRequest(requestId) {
+  const req = friendRequests.find(r => r.id === requestId);
+  if (!req) return { error: 'Request not found' };
+  req.status = 'accepted';
+  return { success: true };
+}
+
+function rejectFriendRequest(requestId) {
+  const idx = friendRequests.findIndex(r => r.id === requestId);
+  if (idx === -1) return { error: 'Request not found' };
+  friendRequests.splice(idx, 1);
+  return { success: true };
+}
+
+function removeFriend(userId, friendId) {
+  const idx = friendRequests.findIndex(r =>
+    r.status === 'accepted' &&
+    ((r.fromId === userId && r.toId === friendId) || (r.fromId === friendId && r.toId === userId))
+  );
+  if (idx === -1) return { error: 'Friend not found' };
+  friendRequests.splice(idx, 1);
+  return { success: true };
+}
+
+function blockUser(blockerId, blockedId) {
+  const exists = blockedUsers.find(b => b.blockerId === blockerId && b.blockedId === blockedId);
+  if (exists) return { error: 'Already blocked' };
+  blockedUsers.push({ blockerId, blockedId });
+  // Remove any friendship
+  removeFriend(blockerId, blockedId);
+  return { success: true };
+}
+
+function unblockUser(blockerId, blockedId) {
+  const idx = blockedUsers.findIndex(b => b.blockerId === blockerId && b.blockedId === blockedId);
+  if (idx === -1) return { error: 'Not blocked' };
+  blockedUsers.splice(idx, 1);
+  return { success: true };
+}
+
+// ── Exports ─────────────────────────────────────────────────────
+
 module.exports = {
   query: async (text, params = []) => {
     const pool = await getPool();
@@ -87,5 +196,24 @@ module.exports = {
     const result = await request.query(translateQuery(text));
     return { rows: result.recordset || [] };
   },
-  sql
+  sql,
+  // In-memory stores
+  users,
+  friendRequests,
+  blockedUsers,
+  bannedWords,
+  predefinedMessages,
+  customStickers,
+  // Helpers
+  filterMessage,
+  getFriends,
+  getPendingRequests,
+  getSentRequests,
+  getBlockedByUser,
+  sendFriendRequest,
+  acceptFriendRequest,
+  rejectFriendRequest,
+  removeFriend,
+  blockUser,
+  unblockUser
 };

@@ -1,34 +1,81 @@
+/**
+ * DominoGame — Orchestrator composing modular engine components.
+ *
+ * This class delegates to:
+ *   • DeckManager     — tile generation, shuffling, dealing, drawing
+ *   • MoveValidator   — move legality, misdeal detection
+ *   • ScoreCalculator — All Fives, winner pip scoring, blocked winner
+ *   • TurnManager     — starting player, turn advancement, pass tracking, blocked detection
+ *
+ * The public API is 100% backward-compatible with the original monolithic class.
+ * All method signatures and return shapes are preserved for the UI agent.
+ */
+
+const DeckManager      = require('./engine/DeckManager');
+const MoveValidator    = require('./engine/MoveValidator');
+const ScoreCalculator  = require('./engine/ScoreCalculator');
+const TurnManager      = require('./engine/TurnManager');
+
 class DominoGame {
-    constructor(gameMode = 'Normal', teamMode = 'Free For All', matchFormat = 'Score', currentRoundNumber = 1) {
-        this.deck = [];
-        this.players = {}; // { socketId: { hand: [] } }
-        this.board = []; // Array of dominoes e.g. [{ left: 6, right: 6 }]
-        this.turn = null; 
+    /**
+     * @param {string} gameMode          'Normal' | 'Blocking' | 'All Fives'
+     * @param {string} teamMode          'Free For All' | '2v2'
+     * @param {string} matchFormat       'Score' | 'Best of 1' | 'Best of 3' | 'Best of 5'
+     * @param {number} currentRoundNumber
+     * @param {string|null} lastRoundWinner   Player who Dominoed last round
+     * @param {string|null} lastPlayerToMove  Player who caused last Block
+     */
+    constructor(gameMode = 'Normal', teamMode = 'Free For All', matchFormat = 'Score', currentRoundNumber = 1, lastRoundWinner = null, lastPlayerToMove = null) {
+        // ── Composed engine modules ─────────────────────────────
+        this._deckMgr   = new DeckManager();
+        this._validator  = new MoveValidator();
+        this._scorer     = new ScoreCalculator();
+        this._turnMgr    = new TurnManager();
+
+        // ── Public state (read by index.js / BotAI / serializer) ─
+        this.deck        = [];                // boneyard reference
+        this.fullDeck    = [];                // frozen copy of shuffled 28 tiles
+        this.takenIndices = new Set();         // indices in fullDeck that are dealt/drawn
+        this.players     = {};                // { socketId: { hand: [] } }
+        this.board       = [];                // played tiles in order
+        this.turn        = null;              // current player's socketId
         this.playerOrder = [];
-        this.state = 'waiting'; 
-        this.gameMode = gameMode;
-        this.teamMode = teamMode;
-        this.matchFormat = matchFormat;
+        this.state       = 'waiting';         // 'waiting' | 'dealing' | 'playing' | 'finished'
+        this.phase       = 'waiting';         // 'waiting' | 'dealing' | 'playing' | 'boneyard_pick'
+        this.dealOrder   = [];                // [{tileIndex, toPlayer, dealStep}, ...]
+
+        // ── Game settings ───────────────────────────────────────
+        this.gameMode          = gameMode;
+        this.teamMode          = teamMode;
+        this.matchFormat       = matchFormat;
         this.currentRoundNumber = currentRoundNumber;
+        this.lastRoundWinner   = lastRoundWinner;
+        this.lastPlayerToMove  = lastPlayerToMove;
         this.roundStarterIndex = 0;
-        this.passTracking = {}; // Track what numbers each player has passed on
+
+        // ── Tracking ────────────────────────────────────────────
+        this.passTracking = {};               // delegated to TurnManager but kept for BotAI access
+        this.misdealCount = 0;
+        this.lastMisdealReason = null;
     }
 
+    // ═══════════════════════════════════════════════════════════
+    //  DECK OPERATIONS (delegated to DeckManager)
+    // ═══════════════════════════════════════════════════════════
+
     generateDeck() {
-        this.deck = [];
-        for (let i = 0; i <= 6; i++) {
-            for (let j = i; j <= 6; j++) {
-                this.deck.push({ left: i, right: j });
-            }
-        }
+        this._deckMgr.generate();
+        this.deck = this._deckMgr.tiles;
     }
 
     shuffleDeck() {
-        for (let i = this.deck.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [this.deck[i], this.deck[j]] = [this.deck[j], this.deck[i]];
-        }
+        this._deckMgr.shuffle();
+        this.deck = this._deckMgr.tiles;
     }
+
+    // ═══════════════════════════════════════════════════════════
+    //  PLAYER MANAGEMENT
+    // ═══════════════════════════════════════════════════════════
 
     addPlayer(socketId) {
         if (!this.players[socketId]) {
@@ -46,194 +93,324 @@ class DominoGame {
         }
     }
 
+    // ═══════════════════════════════════════════════════════════
+    //  MISDEAL DETECTION (delegated to MoveValidator)
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * @returns {{ isMisdeal: boolean, reason?: string }}
+     */
+    checkMisdeal() {
+        const hands = this.playerOrder.map(id => this.players[id].hand);
+        return this._validator.checkMisdeal(hands, this.playerOrder);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  GAME START
+    // ═══════════════════════════════════════════════════════════
+
     startGame() {
         if (this.playerOrder.length < 2) return false;
-        
-        this.generateDeck();
-        this.shuffleDeck();
-        this.board = [];
-        this.passTracking = {};
-        
-        // Hand size: 2 players = 7 each, 3 players = 7 each, 4 players = 7 each
-        // (Standard double-six: 28 tiles / 4 = 7 each, no boneyard in 4-player)
-        const handSize = 7;
-        
-        this.playerOrder.forEach(socketId => {
-            this.players[socketId].hand = this.deck.splice(0, handSize);
-            this.passTracking[socketId] = [];
-        });
 
-        let startingPlayer = null;
+        let misdealCount = 0;
+        const MAX_REDEALS = 50;
 
-        // Determine required starting double based on rules
-        let requiredDouble = -1;
-        
-        if (['Best of 1', 'Best of 3', 'Best of 5'].includes(this.matchFormat)) {
-            requiredDouble = this.currentRoundNumber;
-        } else if (this.gameMode === 'Blocking Mode' && this.currentRoundNumber === 1) {
-            requiredDouble = 1;
-        }
+        // Deal-validate loop: re-deal on misdeal
+        while (true) {
+            this.generateDeck();
+            this.shuffleDeck();
+            this.board = [];
+            this.passTracking = {};
+            this.takenIndices = new Set();
+            this._turnMgr.resetPassTracking(this.playerOrder);
 
-        if (requiredDouble !== -1) {
+            // Freeze a copy of the full 28-tile deck for boneyard display
+            this.fullDeck = this.deck.map((t, i) => ({ left: t.left, right: t.right, index: i }));
+
+            const handSize = 7;
+            let dealIdx = 0;
             this.playerOrder.forEach(socketId => {
-                this.players[socketId].hand.forEach(bone => {
-                    if (bone.left === requiredDouble && bone.right === requiredDouble) {
-                        startingPlayer = socketId;
-                    }
-                });
+                this.players[socketId].hand = this.deck.splice(0, handSize);
+                // Mark dealt tile indices as taken
+                for (let k = 0; k < handSize; k++) {
+                    this.takenIndices.add(dealIdx + k);
+                }
+                dealIdx += handSize;
+                this.passTracking[socketId] = [];
             });
+
+            const result = this.checkMisdeal();
+            if (!result.isMisdeal) break;
+
+            misdealCount++;
+            this.lastMisdealReason = result.reason;
+            if (misdealCount >= MAX_REDEALS) break;
         }
 
-        // Fall back to highest double if startingPlayer is still null
-        let highestDouble = -1;
-        if (!startingPlayer) {
-            this.playerOrder.forEach(socketId => {
-                this.players[socketId].hand.forEach(bone => {
-                    if (bone.left === bone.right) {
-                        if (bone.left > highestDouble) {
-                            highestDouble = bone.left;
-                            startingPlayer = socketId;
-                        }
-                    }
-                });
-            });
-        }
+        this.misdealCount = misdealCount;
 
-        if (!startingPlayer) {
-            // No doubles: player with highest single tile starts
-            let highestPip = -1;
-            this.playerOrder.forEach(socketId => {
-                this.players[socketId].hand.forEach(bone => {
-                    const total = bone.left + bone.right;
-                    if (total > highestPip) {
-                        highestPip = total;
-                        startingPlayer = socketId;
-                    }
-                });
-            });
-        }
+        // Determine who starts
+        this.turn = this._turnMgr.determineStartingPlayer(
+            this.players,
+            this.playerOrder,
+            this.currentRoundNumber,
+            this.gameMode,
+            this.lastRoundWinner,
+            this.lastPlayerToMove
+        );
 
-        this.turn = startingPlayer;
         this.state = 'playing';
         return true;
     }
 
-    getValidMoves(hand) {
-        if (this.board.length === 0) return hand;
+    // ═══════════════════════════════════════════════════════════
+    //  ANIMATED DEALING (new multi-phase flow)
+    // ═══════════════════════════════════════════════════════════
 
-        const leftEnd = this.board[0].left;
-        const rightEnd = this.board[this.board.length - 1].right;
+    /**
+     * Phase 1: Prepare the game for animated dealing.
+     * Shuffles the deck, assigns tile positions, generates deal order,
+     * but does NOT deal tiles to players (hands start empty).
+     *
+     * @returns {boolean} true if preparation succeeded
+     */
+    prepareGame() {
+        if (this.playerOrder.length < 2) return false;
 
-        return hand.filter(bone => 
-            bone.left === leftEnd || bone.right === leftEnd || 
-            bone.left === rightEnd || bone.right === rightEnd
-        );
-    }
+        this.generateDeck();
+        this.shuffleDeck();
+        this.board = [];
+        this.passTracking = {};
+        this.takenIndices = new Set();
+        this._turnMgr.resetPassTracking(this.playerOrder);
 
-    // Get open ends of the board
-    getOpenEnds() {
-        if (this.board.length === 0) return [];
-        return [this.board[0].left, this.board[this.board.length - 1].right];
-    }
+        // Freeze a copy of the full 28-tile deck with positions
+        this.fullDeck = this.deck.map((t, i) => ({ left: t.left, right: t.right, index: i }));
 
-    checkBlocked() {
-        // Blocked: NO player can move AND the boneyard is empty
-        if (this.deck.length > 0) return false;
+        // Initialize empty hands
+        this.playerOrder.forEach(socketId => {
+            this.players[socketId].hand = [];
+            this.passTracking[socketId] = [];
+        });
 
-        for (let socketId of this.playerOrder) {
-            const moves = this.getValidMoves(this.players[socketId].hand);
-            if (moves.length > 0) return false;
+        // Generate the deal order: random pick order, distributed clockwise
+        const shuffledIndices = [...Array(28).keys()];
+        for (let i = shuffledIndices.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffledIndices[i], shuffledIndices[j]] = [shuffledIndices[j], shuffledIndices[i]];
         }
+
+        this.dealOrder = [];
+        const handSize = 7;
+        const totalToDeal = this.playerOrder.length * handSize;
+        for (let d = 0; d < totalToDeal; d++) {
+            this.dealOrder.push({
+                tileIndex: shuffledIndices[d],
+                toPlayer: this.playerOrder[d % this.playerOrder.length],
+                dealStep: d
+            });
+        }
+
+        this.phase = 'dealing';
+        this.state = 'dealing';
         return true;
     }
 
+    /**
+     * Phase 2: Deal one tile to a player (called one at a time by the server).
+     *
+     * @param {number} tileIndex  Index in fullDeck
+     * @param {string} playerId   Socket ID of the receiving player
+     * @returns {{ success?: boolean, tile?: object, error?: string }}
+     */
+    dealTileToPlayer(tileIndex, playerId) {
+        if (tileIndex < 0 || tileIndex >= this.fullDeck.length) {
+            return { error: 'Invalid tile index' };
+        }
+        if (this.takenIndices.has(tileIndex)) {
+            return { error: 'Tile already taken' };
+        }
+
+        const tile = this.fullDeck[tileIndex];
+
+        // Remove from the boneyard deck array
+        const deckIdx = this.deck.findIndex(d => d.left === tile.left && d.right === tile.right);
+        if (deckIdx !== -1) this.deck.splice(deckIdx, 1);
+
+        this.players[playerId].hand.push({ left: tile.left, right: tile.right });
+        this.takenIndices.add(tileIndex);
+
+        return { success: true, tile: { left: tile.left, right: tile.right } };
+    }
+
+    /**
+     * Phase 3: Finalize the deal — check for misdeal, determine starting player.
+     * Called after all tiles have been dealt via dealTileToPlayer().
+     *
+     * @returns {{ misdeal: boolean, reason?: string }}
+     */
+    finalizeDeal() {
+        const misdealResult = this.checkMisdeal();
+        if (misdealResult.isMisdeal) {
+            this.misdealCount++;
+            this.lastMisdealReason = misdealResult.reason;
+            return { misdeal: true, reason: misdealResult.reason };
+        }
+
+        // Determine who starts
+        this.turn = this._turnMgr.determineStartingPlayer(
+            this.players,
+            this.playerOrder,
+            this.currentRoundNumber,
+            this.gameMode,
+            this.lastRoundWinner,
+            this.lastPlayerToMove
+        );
+
+        this.state = 'playing';
+        this.phase = 'playing';
+        return { misdeal: false };
+    }
+
+    /**
+     * Identify which player caused the misdeal and return their hand for reveal.
+     *
+     * @returns {{ playerId: string, hand: object[], reason: string } | null}
+     */
+    getMisdealHand() {
+        for (const id of this.playerOrder) {
+            const hand = this.players[id].hand;
+
+            // 5+ doubles
+            const doubleCount = hand.filter(b => b.left === b.right).length;
+            if (doubleCount >= 5) {
+                return { playerId: id, hand: [...hand], reason: `${doubleCount} doubles` };
+            }
+
+            // Suit frequency checks
+            for (let suit = 0; suit <= 6; suit++) {
+                const count = hand.filter(b => b.left === suit || b.right === suit).length;
+                if (count >= 6) {
+                    return { playerId: id, hand: [...hand], reason: `${count} tiles of suit ${suit}` };
+                }
+                if (count === 5) {
+                    const hasDouble = hand.some(b => b.left === suit && b.right === suit);
+                    if (!hasDouble) {
+                        return { playerId: id, hand: [...hand], reason: `5 tiles of suit ${suit} without the double` };
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  MOVE QUERIES (delegated to MoveValidator)
+    // ═══════════════════════════════════════════════════════════
+
+    getValidMoves(hand) {
+        return this._validator.getValidMoves(hand, this.board);
+    }
+
+    getOpenEnds() {
+        return this._validator.getOpenEnds(this.board);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  BLOCKED DETECTION (delegated to TurnManager)
+    // ═══════════════════════════════════════════════════════════
+
+    checkBlocked() {
+        return this._turnMgr.isBlocked(this.players, this.playerOrder, this.deck, this.board);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  SCORING (delegated to ScoreCalculator)
+    // ═══════════════════════════════════════════════════════════
+
     calculatePoints() {
-        let lowestTotal = Infinity;
-        let blockedWinner = null;
-        
-        const totals = {};
-        
-        this.playerOrder.forEach(socketId => {
-            let total = 0;
-            this.players[socketId].hand.forEach(b => { total += b.left + b.right });
-            totals[socketId] = total;
-
-            if (total < lowestTotal) {
-                lowestTotal = total;
-                blockedWinner = socketId;
-            }
-        });
-
-        return { totals, blockedWinner };
+        return this._scorer.calculateBlockedWinner(
+            this.players,
+            this.playerOrder,
+            this.teamMode,
+            this.lastPlayerToMove
+        );
     }
 
-    // Calculate winner's score: sum of ALL opponents' remaining pips
     calculateWinnerScore(winnerId) {
-        let score = 0;
-        this.playerOrder.forEach(socketId => {
-            if (socketId !== winnerId) {
-                this.players[socketId].hand.forEach(b => {
-                    score += b.left + b.right;
-                });
-            }
-        });
-        return score;
+        return this._scorer.calculateWinnerScore(
+            winnerId,
+            this.players,
+            this.playerOrder,
+            this.teamMode
+        );
     }
 
+    calculateAllFivesPoints() {
+        return this._scorer.calculateAllFivesPoints(this.board);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  PLAY A BONE
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Attempt to play a tile from the player's hand onto the board.
+     *
+     * @param {string} socketId  Player making the move
+     * @param {{ left: number, right: number }} bone  The tile to play
+     * @param {string} end  'left' or 'right'
+     * @returns {object}  Result payload — backward-compatible with original
+     */
     playBone(socketId, bone, end) {
         if (this.turn !== socketId) return { error: 'Not your turn' };
 
         const playerHand = this.players[socketId].hand;
-        const boneIndex = playerHand.findIndex(b => 
-            (b.left === bone.left && b.right === bone.right) || 
+        const boneIndex = playerHand.findIndex(b =>
+            (b.left === bone.left && b.right === bone.right) ||
             (b.left === bone.right && b.right === bone.left)
         );
-        
+
         if (boneIndex === -1) return { error: 'Bone not in hand' };
 
-        let playedBone = playerHand[boneIndex];
+        const playedBone = playerHand[boneIndex];
         let pointsEarnedThisTurn = 0;
 
+        // ── Empty board: validate first-play rules ──────────────
         if (this.board.length === 0) {
+            const validation = this._validator.validatePlay(playedBone, end, this.board, {
+                currentRoundNumber: this.currentRoundNumber,
+                gameMode: this.gameMode,
+                hand: playerHand
+            });
+
+            if (!validation.valid) return { error: validation.error };
+
             this.board.push(playedBone);
             playerHand.splice(boneIndex, 1);
-            
+
             if (this.gameMode === 'All Fives') {
                 pointsEarnedThisTurn = this.calculateAllFivesPoints();
             }
 
-            // Domino! Hand empty = immediate win
+            // Domino! (hand empty → immediate win)
             if (playerHand.length === 0) {
-                this.state = 'finished';
-                const winnerScore = this.calculateWinnerScore(socketId);
-                return { success: true, winner: socketId, pointsEarnedThisTurn, winnerScore, reason: 'domino' };
+                return this._buildWinResult(socketId, pointsEarnedThisTurn, 'domino');
             }
 
             this.nextTurn();
             return { success: true, pointsEarnedThisTurn };
         }
 
-        const leftEnd = this.board[0].left;
-        const rightEnd = this.board[this.board.length - 1].right;
+        // ── Non-empty board: validate placement ─────────────────
+        const validation = this._validator.validatePlay(playedBone, end, this.board, {});
+        if (!validation.valid) return { error: validation.error };
 
+        // Place the correctly-oriented bone
         if (end === 'left') {
-            if (playedBone.right === leftEnd) {
-                this.board.unshift(playedBone);
-            } else if (playedBone.left === leftEnd) {
-                this.board.unshift({ left: playedBone.right, right: playedBone.left });
-            } else {
-                return { error: 'Invalid move' };
-            }
-        } else if (end === 'right') {
-            if (playedBone.left === rightEnd) {
-                this.board.push(playedBone);
-            } else if (playedBone.right === rightEnd) {
-                this.board.push({ left: playedBone.right, right: playedBone.left });
-            } else {
-                return { error: 'Invalid move' };
-            }
+            this.board.unshift(validation.orientedBone);
         } else {
-             return { error: 'Invalid move end' };
+            this.board.push(validation.orientedBone);
         }
 
         playerHand.splice(boneIndex, 1);
@@ -242,87 +419,126 @@ class DominoGame {
             pointsEarnedThisTurn = this.calculateAllFivesPoints();
         }
 
-        // Domino! Hand empty = immediate round win
+        // Domino!
         if (playerHand.length === 0) {
-            this.state = 'finished';
-            const winnerScore = this.calculateWinnerScore(socketId);
-            return { success: true, winner: socketId, pointsEarnedThisTurn, winnerScore, reason: 'domino' };
+            return this._buildWinResult(socketId, pointsEarnedThisTurn, 'domino');
         }
 
-        // Check if game is now blocked
+        this.lastPlayerToMove = socketId;
+
+        // Check blocked
         if (this.checkBlocked()) {
-            this.state = 'finished';
-            const { blockedWinner, totals } = this.calculatePoints();
-            const winnerScore = this.calculateWinnerScore(blockedWinner);
-            return { success: true, winner: blockedWinner, pointsEarnedThisTurn, winnerScore, reason: 'blocked', totals };
+            return this._buildBlockedResult(pointsEarnedThisTurn);
         }
 
         this.nextTurn();
         return { success: true, pointsEarnedThisTurn };
     }
 
-    calculateAllFivesPoints() {
-        if (this.board.length === 0) return 0;
-        
-        let sum = 0;
-        const leftBone = this.board[0];
-        const rightBone = this.board[this.board.length - 1];
+    // ═══════════════════════════════════════════════════════════
+    //  DRAW FROM BONEYARD
+    // ═══════════════════════════════════════════════════════════
 
-        if (this.board.length === 1) {
-            sum = leftBone.left + leftBone.right;
-        } else {
-            sum += leftBone.left === leftBone.right ? leftBone.left * 2 : leftBone.left;
-            sum += rightBone.left === rightBone.right ? rightBone.right * 2 : rightBone.right;
-        }
-
-        if (sum % 5 === 0) return sum;
-        return 0;
-    }
-
-    // Draw from boneyard — standard rules:
-    // If player has valid moves, they CANNOT draw
-    // If no valid moves, draw ONE tile from boneyard
-    // If boneyard is empty and still no valid moves, PASS turn
-    drawBone(socketId) {
+    /**
+     * Draw a tile from the boneyard, or pass if empty.
+     *
+     * @param {string} socketId
+     * @returns {object}  Result payload
+     */
+    drawBone(socketId, boneyardIndex) {
         if (this.turn !== socketId) return { error: 'Not your turn' };
-        
+
         const validMoves = this.getValidMoves(this.players[socketId].hand);
         if (validMoves.length > 0) return { error: 'You have valid moves, cannot draw' };
 
-        // Boneyard empty — must pass
+        // Boneyard empty → pass
         if (this.deck.length === 0) {
-            // Track what numbers the player passed on
             const openEnds = this.getOpenEnds();
+            this._turnMgr.recordPass(socketId, openEnds);
             if (!this.passTracking[socketId]) this.passTracking[socketId] = [];
             this.passTracking[socketId].push(...openEnds);
 
-            // Check if the game is completely blocked after this pass
             this.nextTurn();
-            
+
+            // Check if fully blocked after pass
             if (this.checkBlocked()) {
                 this.state = 'finished';
                 const { blockedWinner } = this.calculatePoints();
                 const winnerScore = this.calculateWinnerScore(blockedWinner);
-                return { success: true, passed: true, blocked: true, winner: blockedWinner, winnerScore, reason: 'blocked' };
+                const allHands = {};
+                this.playerOrder.forEach(id => { allHands[id] = this.players[id].hand; });
+                return { success: true, passed: true, blocked: true, winner: blockedWinner, winnerScore, reason: 'blocked', allHands };
             }
 
             return { success: true, passed: true, message: 'No bones left, turn passed' };
         }
 
-        // Draw one bone from boneyard
-        const bone = this.deck.pop();
+        let bone;
+
+        // If a specific boneyard index was requested, draw that tile
+        if (typeof boneyardIndex === 'number' && boneyardIndex >= 0 && boneyardIndex < this.fullDeck.length) {
+            if (this.takenIndices.has(boneyardIndex)) {
+                return { error: 'That tile is already taken' };
+            }
+            // Find the tile in the remaining deck
+            const fullTile = this.fullDeck[boneyardIndex];
+            const deckIdx = this.deck.findIndex(d => d.left === fullTile.left && d.right === fullTile.right);
+            if (deckIdx === -1) return { error: 'Tile not in deck' };
+            bone = this.deck.splice(deckIdx, 1)[0];
+            this.takenIndices.add(boneyardIndex);
+        } else {
+            // Default: draw random (for bots / auto-pass)
+            bone = this.deck.pop();
+            // Find and mark the corresponding fullDeck index
+            for (let i = 0; i < this.fullDeck.length; i++) {
+                if (!this.takenIndices.has(i) && this.fullDeck[i].left === bone.left && this.fullDeck[i].right === bone.right) {
+                    this.takenIndices.add(i);
+                    break;
+                }
+            }
+        }
+
         this.players[socketId].hand.push(bone);
 
-        // Check if drawn bone is playable
         const newValidMoves = this.getValidMoves(this.players[socketId].hand);
         const canPlayNow = newValidMoves.length > 0;
 
         return { success: true, bone, drawnBone: bone, canPlayNow, deckRemaining: this.deck.length };
     }
 
+    // ═══════════════════════════════════════════════════════════
+    //  TURN ADVANCEMENT
+    // ═══════════════════════════════════════════════════════════
+
     nextTurn() {
-        const turnIndex = this.playerOrder.indexOf(this.turn);
-        this.turn = this.playerOrder[(turnIndex + 1) % this.playerOrder.length];
+        this.turn = this._turnMgr.nextTurn(this.turn, this.playerOrder);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  PRIVATE HELPERS
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Build the standard "domino" win result payload.
+     */
+    _buildWinResult(winnerId, pointsEarnedThisTurn, reason) {
+        this.state = 'finished';
+        const winnerScore = this.calculateWinnerScore(winnerId);
+        const allHands = {};
+        this.playerOrder.forEach(id => { allHands[id] = this.players[id].hand; });
+        return { success: true, winner: winnerId, pointsEarnedThisTurn, winnerScore, reason, allHands };
+    }
+
+    /**
+     * Build the standard "blocked" result payload.
+     */
+    _buildBlockedResult(pointsEarnedThisTurn) {
+        this.state = 'finished';
+        const { blockedWinner, totals } = this.calculatePoints();
+        const winnerScore = this.calculateWinnerScore(blockedWinner);
+        const allHands = {};
+        this.playerOrder.forEach(id => { allHands[id] = this.players[id].hand; });
+        return { success: true, winner: blockedWinner, pointsEarnedThisTurn, winnerScore, reason: 'blocked', totals, allHands };
     }
 }
 

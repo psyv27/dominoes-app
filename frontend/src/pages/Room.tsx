@@ -2,7 +2,11 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
-import { Users, Crown, LogOut, MessageSquare, X } from 'lucide-react';
+import { Avatar, Button, Tag, Input, Tooltip, Card, List } from 'antd';
+import { 
+    TeamOutlined, CrownOutlined, LogoutOutlined, 
+    MessageOutlined, CloseOutlined, CopyOutlined, SendOutlined
+} from '@ant-design/icons';
 import Gameplay from './Gameplay';
 import './Room.css';
 
@@ -27,22 +31,10 @@ export default function Room() {
             socket.emit('joinRoom', { roomId: id, playerDetails: user });
         }
 
-        socket.on('roomUpdated', (updatedRoom: any) => {
-            setRoom(updatedRoom);
-        });
-
-        socket.on('roomJoined', (joinedRoom: any) => {
-            setRoom(joinedRoom);
-        });
-
-        socket.on('gameStarted', (startedRoom: any) => {
-            setRoom(startedRoom);
-        });
-
-        socket.on('chatMessage', (msg: any) => {
-            setMessages(prev => [...prev, msg]);
-        });
-
+        socket.on('roomUpdated', (updatedRoom: any) => setRoom(updatedRoom));
+        socket.on('roomJoined', (joinedRoom: any) => setRoom(joinedRoom));
+        socket.on('gameStarted', (startedRoom: any) => setRoom(startedRoom));
+        socket.on('chatMessage', (msg: any) => setMessages(prev => [...prev, msg]));
         socket.on('kicked', (reason: string) => {
             alert(reason);
             navigate('/lobby');
@@ -66,8 +58,8 @@ export default function Room() {
         socket.emit('startGame', id);
     };
 
-    const handleSendChat = (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleSendChat = (e?: React.FormEvent) => {
+        if (e) e.preventDefault();
         if (chatInput.trim()) {
             socket.emit('chatMessage', { 
                 roomId: id, 
@@ -100,118 +92,153 @@ export default function Room() {
 
     return (
         <div className="room-container">
-            <header className="room-header">
-                <div className="room-title">
-                    <h1>Room Code: <span>{room.id}</span></h1>
-                    <div className="room-badges">
-                        <span className="badge">{room.gameMode}</span>
-                        <span className="badge">{room.teamMode}</span>
-                        {room.matchFormat === 'Score' ? (
-                            <span className="badge">First to {room.targetScore}</span>
-                        ) : (
-                            <span className="badge">{room.matchFormat}</span>
-                        )}
+            <header className="room-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem' }}>
+                <div className="room-title" style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                    {room.roomType === 'Private' && room.inviteCode ? (
+                        <>
+                            <h1 style={{ margin: 0, fontSize: '1.5rem' }}>
+                                Invite Code: <span className="invite-code-display" style={{ fontFamily: 'monospace', color: '#f9a825', letterSpacing: '0.2rem' }}>{room.inviteCode}</span>
+                            </h1>
+                            <Tooltip title="Copy invite code">
+                                <Button 
+                                    icon={<CopyOutlined />} 
+                                    size="small"
+                                    onClick={() => navigator.clipboard.writeText(room.inviteCode)}
+                                >
+                                    Copy
+                                </Button>
+                            </Tooltip>
+                        </>
+                    ) : (
+                        <h1 style={{ margin: 0, fontSize: '1.5rem' }}>Room: <span>#{room.id.slice(0, 5)}</span></h1>
+                    )}
+                    <div className="room-badges" style={{ display: 'flex', gap: '0.5rem' }}>
+                        <Tag color="blue">{room.gameMode}</Tag>
+                        <Tag color="cyan">{room.teamMode}</Tag>
+                        <Tag color="gold">
+                            {room.matchFormat === 'Score' ? `First to ${room.targetScore}` : room.matchFormat}
+                        </Tag>
                     </div>
                 </div>
-                <button className="leave-btn" onClick={handleLeave}>
-                    <LogOut size={18} /> Leave
-                </button>
+                <Button danger type="primary" icon={<LogoutOutlined />} onClick={handleLeave}>
+                    Leave Room
+                </Button>
             </header>
 
-            <div className="room-layout">
-                <div className="players-panel">
-                    <div className="panel-header">
-                        <h2>Players ({players.length}/4)</h2>
-                        <Users size={20} className="icon-muted" />
-                    </div>
-                    
-                    <div className="players-list">
-                        {players.map((p: any) => (
-                            <div key={p.socketId} className={`player-row ${p.socketId === socket.id ? 'is-me' : ''}`}>
-                                <div className="player-info">
-                                    <div className="avatar">{p.nickname?.charAt(0)?.toUpperCase() || '?'}</div>
-                                    <div>
-                                        <div className="p-name">
-                                            {p.nickname} {p.socketId === socket.id && '(You)'}
-                                        </div>
-                                        {isTeamMode && (
-                                            <div className="team-controls">
-                                                {p.socketId === socket.id ? (
-                                                    <>
-                                                        <button 
-                                                            className={`team-btn ${p.team === 1 ? 'active-team' : ''}`}
-                                                            onClick={() => handleSwitchTeam(1)}
-                                                        >Team 1</button>
-                                                        <button 
-                                                            className={`team-btn ${p.team === 2 ? 'active-team' : ''}`}
-                                                            onClick={() => handleSwitchTeam(2)}
-                                                        >Team 2</button>
-                                                    </>
-                                                ) : (
-                                                    <span className="p-team">Team {p.team || '?'}</span>
+            <div className="room-layout" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem', padding: '1rem', height: 'calc(100vh - 80px)' }}>
+                <Card 
+                    title={<><TeamOutlined /> Players ({players.length}/4)</>} 
+                    className="players-panel"
+                    style={{ background: 'rgba(25, 33, 44, 0.4)', borderColor: 'var(--glass-border)', color: 'white', display: 'flex', flexDirection: 'column' }}
+                    bodyStyle={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}
+                >
+                    <List
+                        dataSource={[...players, ...Array(Math.max(0, 4 - players.length)).fill(null)]}
+                        renderItem={(p: any, i) => (
+                            <List.Item 
+                                key={p ? p.socketId : `empty-${i}`}
+                                style={{ 
+                                    background: p?.socketId === socket.id ? 'rgba(212, 169, 98, 0.15)' : 'rgba(0,0,0,0.2)',
+                                    borderRadius: '8px',
+                                    marginBottom: '8px',
+                                    padding: '12px 16px',
+                                    border: p?.socketId === socket.id ? '1px solid rgba(212, 169, 98, 0.3)' : '1px solid transparent'
+                                }}
+                            >
+                                {p ? (
+                                    <div style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                            <Avatar style={{ backgroundColor: '#d4a962', color: '#1a120b', fontWeight: 'bold' }}>
+                                                {p.nickname?.charAt(0)?.toUpperCase() || '?'}
+                                            </Avatar>
+                                            <div>
+                                                <div style={{ fontWeight: 600, fontSize: '1.1rem', color: '#fff' }}>
+                                                    {p.nickname} {p.socketId === socket.id && <Tag color="orange" style={{ marginLeft: 8 }}>You</Tag>}
+                                                </div>
+                                                {isTeamMode && (
+                                                    <div style={{ marginTop: 4 }}>
+                                                        {p.socketId === socket.id ? (
+                                                            <Button.Group>
+                                                                <Button 
+                                                                    size="small" 
+                                                                    type={p.team === 1 ? 'primary' : 'default'}
+                                                                    onClick={() => handleSwitchTeam(1)}
+                                                                >Team 1</Button>
+                                                                <Button 
+                                                                    size="small" 
+                                                                    type={p.team === 2 ? 'primary' : 'default'}
+                                                                    onClick={() => handleSwitchTeam(2)}
+                                                                >Team 2</Button>
+                                                            </Button.Group>
+                                                        ) : (
+                                                            <Tag color={p.team === 1 ? 'blue' : p.team === 2 ? 'red' : 'default'}>
+                                                                Team {p.team || '?'}
+                                                            </Tag>
+                                                        )}
+                                                    </div>
                                                 )}
                                             </div>
-                                        )}
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            {room.hostId === p.socketId && <Tooltip title="Host"><CrownOutlined style={{ color: '#d4a962', fontSize: '1.2rem' }} /></Tooltip>}
+                                            {isHost && p.socketId !== socket.id && (
+                                                <Tooltip title="Kick Player">
+                                                    <Button type="text" danger icon={<CloseOutlined />} onClick={() => handleKick(p.socketId)} />
+                                                </Tooltip>
+                                            )}
+                                        </div>
                                     </div>
-                                </div>
-                                <div className="player-actions">
-                                    {room.hostId === p.socketId && <Crown size={18} color="#cf9b22" />}
-                                    {isHost && p.socketId !== socket.id && (
-                                        <button className="kick-btn" onClick={() => handleKick(p.socketId)} title="Kick Player">
-                                            <X size={16} />
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
-                        {[...Array(4 - players.length)].map((_, i) => (
-                            <div key={`empty-${i}`} className="player-row empty-slot">
-                                Waiting for player...
-                            </div>
-                        ))}
-                    </div>
-
+                                ) : (
+                                    <div style={{ color: 'rgba(255,255,255,0.3)', fontStyle: 'italic', padding: '8px 0' }}>Waiting for player...</div>
+                                )}
+                            </List.Item>
+                        )}
+                    />
                     {isHost && (
-                        <div className="host-controls">
-                            <button 
-                                className="start-btn" 
+                        <div style={{ marginTop: 'auto', paddingTop: '1rem', textAlign: 'center' }}>
+                            <Button 
+                                type="primary" 
+                                size="large" 
+                                block 
                                 onClick={handleStartGame}
                                 disabled={players.length < 2}
+                                style={{ height: '50px', fontSize: '1.2rem', fontWeight: 700 }}
                             >
                                 Start Game
-                            </button>
-                            {players.length < 2 && <p className="host-tip">Need at least 2 players to start.</p>}
+                            </Button>
+                            {players.length < 2 && <div style={{ color: '#f87171', marginTop: 8 }}>Need at least 2 players to start.</div>}
                         </div>
                     )}
-                </div>
+                </Card>
 
-                <div className="chat-panel">
-                    <div className="panel-header">
-                        <h2>Lobby Chat</h2>
-                        <MessageSquare size={20} className="icon-muted" />
-                    </div>
-                    <div className="chat-messages">
+                <Card 
+                    title={<><MessageOutlined /> Lobby Chat</>} 
+                    className="chat-panel"
+                    style={{ background: 'rgba(25, 33, 44, 0.4)', borderColor: 'var(--glass-border)', color: 'white', display: 'flex', flexDirection: 'column' }}
+                    bodyStyle={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '12px' }}
+                >
+                    <div className="chat-messages" style={{ flex: 1, overflowY: 'auto', marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {messages.length === 0 ? (
-                            <div className="empty-chat">Say hello!</div>
+                            <div style={{ color: 'rgba(255,255,255,0.3)', textAlign: 'center', marginTop: '2rem' }}>Say hello!</div>
                         ) : (
                             messages.map((m: any, i: number) => (
-                                <div key={i} className="message">
-                                    <span className="msg-author">{m.nickname}:</span>
-                                    <span className="msg-text">{m.message}</span>
+                                <div key={i} style={{ background: 'rgba(0,0,0,0.3)', padding: '6px 12px', borderRadius: '8px' }}>
+                                    <span style={{ color: '#d4a962', fontWeight: 600, marginRight: '8px' }}>{m.nickname}:</span>
+                                    <span style={{ color: '#fff' }}>{m.message}</span>
                                 </div>
                             ))
                         )}
                     </div>
-                    <form className="chat-input" onSubmit={handleSendChat}>
-                        <input 
-                            type="text" 
-                            placeholder="Type a message..." 
+                    <form onSubmit={handleSendChat} style={{ display: 'flex', gap: '8px' }}>
+                        <Input 
                             value={chatInput}
                             onChange={e => setChatInput(e.target.value)}
+                            placeholder="Type a message..."
+                            onPressEnter={() => handleSendChat()}
                         />
-                        <button type="submit">Send</button>
+                        <Button type="primary" icon={<SendOutlined />} onClick={() => handleSendChat()} />
                     </form>
-                </div>
+                </Card>
             </div>
         </div>
     );

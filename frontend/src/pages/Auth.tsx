@@ -1,128 +1,239 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { User, KeyRound, UserPlus, LogIn, Compass, Eye, EyeOff } from 'lucide-react';
-import './Auth.css'; // We'll create some styles shortly
+import { Input, Button, Divider, Typography, Alert, Space } from 'antd';
+import { UserOutlined, LockOutlined, LoginOutlined, UserAddOutlined, CompassOutlined, MailOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
+import './Auth.css';
+
+const { Title, Text } = Typography;
+
+type FormState = 'login' | 'register' | 'verify' | 'forgot_password' | 'reset_password';
 
 export default function Auth() {
-    const [isLogin, setIsLogin] = useState(true);
-    const [formData, setFormData] = useState({ username: '', password: '', nickname: '' });
+    const [formState, setFormState] = useState<FormState>('login');
+    const [formData, setFormData] = useState({ email: '', username: '', password: '', nickname: '', otp: '', newPassword: '' });
     const [error, setError] = useState('');
-    const [showPassword, setShowPassword] = useState(false);
+    const [message, setMessage] = useState('');
+    const [loading, setLoading] = useState(false);
     
-    const { login, register, playAsGuest } = useAuth() as any;
+    const { login, register, verifyOtp, forgotPassword, resetPassword, playAsGuest } = useAuth() as any;
     const navigate = useNavigate();
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
+    const switchState = (newState: FormState) => {
+        setFormState(newState);
         setError('');
+        setMessage('');
+    };
 
-        if (isLogin) {
-            const res = await login(formData.username, formData.password);
-            if (res.success) {
-                navigate('/lobby');
-            } else {
-                setError(res.error || 'Login failed');
+    const handleSubmit = async () => {
+        setError('');
+        setMessage('');
+        setLoading(true);
+        
+        try {
+            if (formState === 'login') {
+                const res = await login(formData.username, formData.password);
+                if (res.success) {
+                    navigate('/lobby');
+                } else if (res.pending_verification) {
+                    setFormData(prev => ({ ...prev, email: res.email }));
+                    switchState('verify');
+                    setMessage('Your account is not verified. A new code was sent to your email.');
+                } else {
+                    setError(res.error || 'Login failed');
+                }
+            } else if (formState === 'register') {
+                const res = await register(formData.email, formData.username, formData.password, formData.nickname);
+                if (res.success && res.pending_verification) {
+                    setFormData(prev => ({ ...prev, email: res.email }));
+                    switchState('verify');
+                    setMessage('Registration successful! Please check your email for the verification code.');
+                } else if (res.success) {
+                    navigate('/lobby');
+                } else {
+                    setError(res.error || 'Registration failed');
+                }
+            } else if (formState === 'verify') {
+                const res = await verifyOtp(formData.email, formData.otp);
+                if (res.success) {
+                    navigate('/lobby');
+                } else {
+                    setError(res.error || 'Verification failed');
+                }
+            } else if (formState === 'forgot_password') {
+                const res = await forgotPassword(formData.email);
+                if (res.success) {
+                    switchState('reset_password');
+                    setMessage(`A reset code has been sent to ${formData.email}.`);
+                } else {
+                    setError(res.error || 'Failed to send reset code');
+                }
+            } else if (formState === 'reset_password') {
+                const res = await resetPassword(formData.email, formData.otp, formData.newPassword);
+                if (res.success) {
+                    switchState('login');
+                    setFormData(prev => ({ ...prev, password: '', newPassword: '', otp: '' }));
+                    setMessage('Password updated successfully. Please log in.');
+                } else {
+                    setError(res.error || 'Failed to reset password');
+                }
             }
-        } else {
-            const res = await register(formData.username, formData.password, formData.nickname);
-            if (res.success) {
-                navigate('/lobby');
-            } else {
-                setError(res.error || 'Registration failed');
-            }
+        } finally {
+            setLoading(false);
         }
     };
 
-    const handleGuestPlay = () => {
-        playAsGuest();
-        navigate('/lobby');
+    const handleGuestPlay = async () => {
+        setLoading(true);
+        try {
+            await playAsGuest();
+            navigate('/lobby');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const renderHeader = () => {
+        let titleText = 'Dominoes Master';
+        let subText = '';
+        if (formState === 'login') subText = 'Sign in to your account';
+        else if (formState === 'register') subText = 'Create a new account';
+        else if (formState === 'verify') subText = 'Verify Your Email';
+        else if (formState === 'forgot_password') subText = 'Reset Your Password';
+        else if (formState === 'reset_password') subText = 'Set New Password';
+
+        return (
+            <div className="auth-header">
+                <Title level={2} style={{ margin: 0, color: '#f5f0e6' }}>{titleText}</Title>
+                <Text type="secondary">{subText}</Text>
+            </div>
+        );
     };
 
     return (
         <div className="auth-container">
             <div className="auth-card">
-                <div className="auth-header">
-                    <h1>Dominoes Master</h1>
-                    <p>{isLogin ? 'Sign in to your account' : 'Create a new account'}</p>
-                </div>
+                {renderHeader()}
 
-                {error && <div className="auth-error">{error}</div>}
+                {error && <Alert message={error} type="error" showIcon closable onClose={() => setError('')} style={{ marginBottom: '1rem', borderRadius: 8 }} />}
+                {message && <Alert message={message} type="info" showIcon closable onClose={() => setMessage('')} style={{ marginBottom: '1rem', borderRadius: 8 }} />}
 
-                <form onSubmit={handleSubmit} className="auth-form">
-                    {!isLogin && (
-                        <div className="input-group">
-                            <UserPlus className="input-icon" size={18} />
-                            <input 
-                                type="text" 
-                                placeholder="Nickname (Display Name)" 
-                                value={formData.nickname}
-                                onChange={e => setFormData({...formData, nickname: e.target.value})}
-                                required={!isLogin}
-                            />
-                        </div>
+                <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                    {/* EMAIL INPUT */}
+                    {(formState === 'register' || formState === 'forgot_password') && (
+                        <Input
+                            size="large"
+                            prefix={<MailOutlined />}
+                            placeholder="Email Address"
+                            type="email"
+                            value={formData.email}
+                            onChange={e => setFormData({ ...formData, email: e.target.value })}
+                            onPressEnter={handleSubmit}
+                        />
                     )}
-                    <div className="input-group">
-                        <User className="input-icon" size={18} />
-                        <input 
-                            type="text" 
-                            placeholder="Username (Unique)" 
+
+                    {/* NICKNAME & USERNAME INPUTS */}
+                    {formState === 'register' && (
+                        <Input
+                            size="large"
+                            prefix={<UserAddOutlined />}
+                            placeholder="Nickname (Display Name)"
+                            value={formData.nickname}
+                            onChange={e => setFormData({ ...formData, nickname: e.target.value })}
+                        />
+                    )}
+                    {(formState === 'login' || formState === 'register') && (
+                        <Input
+                            size="large"
+                            prefix={<UserOutlined />}
+                            placeholder="Username"
                             value={formData.username}
-                            onChange={e => setFormData({...formData, username: e.target.value})}
-                            required
+                            onChange={e => setFormData({ ...formData, username: e.target.value })}
+                            onPressEnter={handleSubmit}
                         />
-                    </div>
-                    <div className="input-group">
-                        <KeyRound className="input-icon" size={18} />
-                        <input 
-                            type={showPassword ? "text" : "password"} 
-                            placeholder="Password" 
-                            value={formData.password}
-                            onChange={e => setFormData({...formData, password: e.target.value})}
-                            required
-                        />
-                        <button 
-                            type="button" 
-                            className="pwd-toggle-btn"
-                            onClick={() => setShowPassword(!showPassword)}
-                            aria-label={showPassword ? "Hide password" : "Show password"}
-                        >
-                            {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                        </button>
-                    </div>
+                    )}
 
-                    {isLogin && (
-                        <div className="forgot-pwd-wrap">
-                            <button type="button" className="link-btn forgot-pwd-btn" onClick={() => alert('Forgot Password functionality coming soon!')}>
+                    {/* PASSWORD INPUT */}
+                    {(formState === 'login' || formState === 'register') && (
+                        <Input.Password
+                            size="large"
+                            prefix={<LockOutlined />}
+                            placeholder="Password"
+                            value={formData.password}
+                            onChange={e => setFormData({ ...formData, password: e.target.value })}
+                            onPressEnter={handleSubmit}
+                        />
+                    )}
+
+                    {/* FORGOT PASSWORD LINK */}
+                    {formState === 'login' && (
+                        <div style={{ textAlign: 'right', marginTop: '-10px' }}>
+                            <Button type="link" size="small" onClick={() => switchState('forgot_password')} style={{ fontWeight: 600, padding: 0 }}>
                                 Forgot Password?
-                            </button>
+                            </Button>
                         </div>
                     )}
 
-                    <button type="submit" className="primary-btn">
-                        {isLogin ? <><LogIn size={18}/> Sign In</> : <><UserPlus size={18}/> Register</>}
-                    </button>
-                </form>
+                    {/* OTP INPUT */}
+                    {(formState === 'verify' || formState === 'reset_password') && (
+                        <Input
+                            size="large"
+                            prefix={<SafetyCertificateOutlined />}
+                            placeholder="6-digit Verification Code"
+                            maxLength={6}
+                            value={formData.otp}
+                            onChange={e => setFormData({ ...formData, otp: e.target.value })}
+                            onPressEnter={handleSubmit}
+                            style={{ textAlign: 'center', letterSpacing: '4px', fontSize: '1.2rem' }}
+                        />
+                    )}
 
-                <div className="auth-separator">
-                    <span>or</span>
-                </div>
+                    {/* NEW PASSWORD INPUT */}
+                    {formState === 'reset_password' && (
+                        <Input.Password
+                            size="large"
+                            prefix={<LockOutlined />}
+                            placeholder="New Password"
+                            value={formData.newPassword}
+                            onChange={e => setFormData({ ...formData, newPassword: e.target.value })}
+                            onPressEnter={handleSubmit}
+                        />
+                    )}
 
-                <button type="button" onClick={handleGuestPlay} className="secondary-btn guest-btn">
-                    <Compass size={18} /> Play as Guest
-                </button>
+                    {/* SUBMIT BUTTON */}
+                    <Button
+                        type="primary"
+                        size="large"
+                        block
+                        loading={loading}
+                        icon={formState === 'login' ? <LoginOutlined /> : formState === 'register' ? <UserAddOutlined /> : null}
+                        onClick={handleSubmit}
+                        style={{ height: 48, fontWeight: 700, fontSize: '1.05rem', marginTop: '0.5rem' }}
+                    >
+                        {formState === 'login' && 'Sign In'}
+                        {formState === 'register' && 'Register Account'}
+                        {formState === 'verify' && 'Verify & Login'}
+                        {formState === 'forgot_password' && 'Send Reset Code'}
+                        {formState === 'reset_password' && 'Update Password'}
+                    </Button>
+                </Space>
 
-                <div className="auth-footer">
-                    <p>
-                        {isLogin ? "Don't have an account? " : "Already have an account? "}
-                        <button type="button" className="link-btn" onClick={() => {
-                            setIsLogin(!isLogin);
-                            setFormData({ username: '', password: '', nickname: '' });
-                            setError('');
-                        }}>
-                            {isLogin ? "Sign up" : "Sign in"}
-                        </button>
-                    </p>
+                {(formState === 'login' || formState === 'register') && (
+                    <>
+                        <Divider plain style={{ borderColor: 'rgba(212,169,98,0.15)', color: '#a8b3a0' }}>or</Divider>
+                        <Button size="large" block icon={<CompassOutlined />} onClick={handleGuestPlay} style={{ height: 44, fontWeight: 600 }}>
+                            Play as Guest
+                        </Button>
+                    </>
+                )}
+
+                <div className="auth-footer" style={{ marginTop: '1.5rem', textAlign: 'center' }}>
+                    {formState === 'login' && (
+                        <Text type="secondary">Don't have an account? <Button type="link" style={{ padding: 0, fontWeight: 700 }} onClick={() => switchState('register')}>Sign up</Button></Text>
+                    )}
+                    {(formState === 'register' || formState === 'forgot_password' || formState === 'reset_password' || formState === 'verify') && (
+                        <Text type="secondary">Back to <Button type="link" style={{ padding: 0, fontWeight: 700 }} onClick={() => switchState('login')}>Sign in</Button></Text>
+                    )}
                 </div>
             </div>
         </div>

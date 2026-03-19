@@ -3,17 +3,17 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const config = {
-  server: process.env.DB_SERVER,
-  port: Number(process.env.DB_PORT || 1433),
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  connectionTimeout: Number(process.env.DB_CONNECTION_TIMEOUT || 60000),
-  requestTimeout: Number(process.env.DB_REQUEST_TIMEOUT || 60000),
-  options: {
-    encrypt: (process.env.DB_ENCRYPT || 'true') === 'true',
-    trustServerCertificate: (process.env.DB_TRUST_SERVER_CERTIFICATE || 'false') === 'true'
-  }
+    server: process.env.DB_SERVER,
+    port: Number(process.env.DB_PORT || 1433),
+    database: process.env.DB_NAME,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    connectionTimeout: Number(process.env.DB_CONNECTION_TIMEOUT || 60000),
+    requestTimeout: Number(process.env.DB_REQUEST_TIMEOUT || 60000),
+    options: {
+        encrypt: (process.env.DB_ENCRYPT || 'true') === 'true',
+        trustServerCertificate: (process.env.DB_TRUST_SERVER_CERTIFICATE || 'false') === 'true'
+    }
 };
 
 const initSql = `
@@ -58,6 +58,58 @@ BEGIN
     ALTER TABLE dbo.Users ADD total_games INT NOT NULL CONSTRAINT DF_Users_TotalGames_Migration DEFAULT 0;
 END;
 
+IF COL_LENGTH('dbo.Users', 'email') IS NULL
+BEGIN
+    ALTER TABLE dbo.Users ADD email NVARCHAR(255) NULL;
+    ALTER TABLE dbo.Users ADD CONSTRAINT UQ_Users_Email UNIQUE(email);
+END;
+
+IF COL_LENGTH('dbo.Users', 'is_verified') IS NULL
+BEGIN
+    ALTER TABLE dbo.Users ADD is_verified BIT NOT NULL CONSTRAINT DF_Users_IsVerified DEFAULT 0;
+END;
+
+IF COL_LENGTH('dbo.Users', 'otp_code') IS NULL
+BEGIN
+    ALTER TABLE dbo.Users ADD otp_code NVARCHAR(10) NULL;
+END;
+
+IF COL_LENGTH('dbo.Users', 'otp_expiry') IS NULL
+BEGIN
+    ALTER TABLE dbo.Users ADD otp_expiry DATETIME2 NULL;
+END;
+
+IF COL_LENGTH('dbo.Users', 'coins') IS NULL
+BEGIN
+    ALTER TABLE dbo.Users ADD coins INT NOT NULL CONSTRAINT DF_Users_Coins DEFAULT 300;
+END;
+
+IF COL_LENGTH('dbo.Users', 'games_lost') IS NULL
+BEGIN
+    ALTER TABLE dbo.Users ADD games_lost INT NOT NULL CONSTRAINT DF_Users_GamesLost DEFAULT 0;
+END;
+
+IF COL_LENGTH('dbo.Users', 'games_drawn') IS NULL
+BEGIN
+    ALTER TABLE dbo.Users ADD games_drawn INT NOT NULL CONSTRAINT DF_Users_GamesDrawn DEFAULT 0;
+END;
+
+IF COL_LENGTH('dbo.Users', 'last_daily_reward') IS NULL
+BEGIN
+    ALTER TABLE dbo.Users ADD last_daily_reward DATETIME2 NULL;
+END;
+
+IF COL_LENGTH('dbo.Users', 'is_guest') IS NULL
+BEGIN
+    ALTER TABLE dbo.Users ADD is_guest BIT NOT NULL CONSTRAINT DF_Users_IsGuest DEFAULT 0;
+END;
+
+IF COL_LENGTH('dbo.Users', 'device_id') IS NULL
+BEGIN
+    ALTER TABLE dbo.Users ADD device_id NVARCHAR(255) NULL;
+    ALTER TABLE dbo.Users ADD CONSTRAINT UQ_Users_DeviceID UNIQUE(device_id);
+END;
+
 IF OBJECT_ID(N'dbo.GameHistory', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.GameHistory (
@@ -89,20 +141,20 @@ END;
 `;
 
 async function initDB() {
-  let pool;
+    let pool;
 
-  try {
-    console.log('Running init_db.js with SQL Server connection...');
-    pool = await sql.connect(config);
-    await pool.request().batch(initSql);
-    console.log('Database tables created/migrated successfully.');
-  } catch (err) {
-    console.error('Error creating database tables:', err);
-  } finally {
-    if (pool) {
-      await pool.close();
+    try {
+        console.log('Running init_db.js with SQL Server connection...');
+        pool = await sql.connect(config);
+        await pool.request().batch(initSql);
+        console.log('Database tables created/migrated successfully.');
+    } catch (err) {
+        console.error('Error creating database tables:', err);
+    } finally {
+        if (pool) {
+            await pool.close();
+        }
     }
-  }
 }
 
 initDB();

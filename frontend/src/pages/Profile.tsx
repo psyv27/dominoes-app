@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { User, KeyRound, Image as ImageIcon, ArrowLeft, Save } from 'lucide-react';
+import { User, KeyRound, Image as ImageIcon, ArrowLeft, Save, Trophy, Coins, Target } from 'lucide-react';
 import './Profile.css';
 
 export default function Profile() {
@@ -65,6 +65,24 @@ export default function Profile() {
             </div>
 
             <div className="profile-content">
+                <div className="profile-stats-panel" style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '20px', borderRadius: '12px', marginBottom: '20px', display: 'flex', gap: '20px', justifyContent: 'space-around', color: '#fff' }}>
+                    <div style={{ textAlign: 'center' }}>
+                        <Coins size={32} color="#f5a623" />
+                        <h3 style={{ margin: '10px 0 5px', fontSize: '1.5rem', color: '#f5a623' }}>{user?.coins || 0}</h3>
+                        <p style={{ margin: 0, opacity: 0.7, fontSize: '0.9rem' }}>Coins</p>
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                        <Trophy size={32} color="#2ecc71" />
+                        <h3 style={{ margin: '10px 0 5px', fontSize: '1.5rem' }}>{user?.total_wins || user?.games_won || 0}</h3>
+                        <p style={{ margin: 0, opacity: 0.7, fontSize: '0.9rem' }}>Match Wins</p>
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                        <Target size={32} color="#9b59b6" />
+                        <h3 style={{ margin: '10px 0 5px', fontSize: '1.5rem' }}>{user?.total_games || user?.games_played || 0}</h3>
+                        <p style={{ margin: 0, opacity: 0.7, fontSize: '0.9rem' }}>Total Played</p>
+                    </div>
+                </div>
+
                 <div className="profile-card">
                     <h2>Edit Profile</h2>
                     
