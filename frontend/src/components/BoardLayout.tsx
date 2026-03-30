@@ -9,9 +9,10 @@ interface BoardLayoutProps {
     onPlayRight: () => void;
     onDropLeft: (e: React.DragEvent) => void;
     onDropRight: (e: React.DragEvent) => void;
+    skinBg?: string;
 }
 
-export default function BoardLayout({ board, selectedBone, isMyTurn, onPlayLeft, onPlayRight, onDropLeft, onDropRight }: BoardLayoutProps) {
+export default function BoardLayout({ board, selectedBone, isMyTurn, onPlayLeft, onPlayRight, onDropLeft, onDropRight, skinBg }: BoardLayoutProps) {
     
     // --- Camera State ---
     const [zoom, setZoom] = useState(0.75);
@@ -198,8 +199,16 @@ export default function BoardLayout({ board, selectedBone, isMyTurn, onPlayLeft,
 
     if (board.length === 0) {
         return (
-            <div className="empty-board board-area" style={{ zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <span style={{ fontSize: '1.2rem', fontWeight: 600, color: 'rgba(255,255,255,0.4)' }}>
+            <div className="empty-board board-area" style={{ zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: skinBg || '#366841' }}>
+                <div style={{
+                    position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+                    background: '#2c3e30', color: '#e2e8f0', padding: '16px 40px',
+                    borderRadius: '12px', fontSize: '2.5rem', fontWeight: 800, letterSpacing: '1px', zIndex: 0,
+                    pointerEvents: 'none', boxShadow: '0 4px 15px rgba(0,0,0,0.3)'
+                }}>
+                    DOMINO!
+                </div>
+                <span style={{ fontSize: '1.2rem', fontWeight: 600, color: 'rgba(255,255,255,0.4)', zIndex: 2 }}>
                     {isMyTurn ? '🎲 Play a bone to start!' : '⏳ Waiting for move...'}
                 </span>
             </div>
@@ -215,13 +224,13 @@ export default function BoardLayout({ board, selectedBone, isMyTurn, onPlayLeft,
 
     return (
         <div 
-            className="board-absolute-container board-area"
+            className="board-area"
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
             onWheel={handleWheel}
-            style={{ cursor: isDragging.current ? 'grabbing' : 'grab', touchAction: 'none' }}
+            style={{ overflow: 'hidden', cursor: isDragging.current ? 'grabbing' : 'grab', touchAction: 'none', backgroundColor: skinBg || '#366841' }}
         >
             <div className="board-zoomer" style={{
                 position: 'absolute', top: '50%', left: '50%',
@@ -229,6 +238,14 @@ export default function BoardLayout({ board, selectedBone, isMyTurn, onPlayLeft,
                 transformOrigin: 'center center',
                 transition: isDragging.current ? 'none' : 'transform 0.15s ease-out'
             }}>
+                <div style={{
+                    position: 'absolute', top: 0, left: 0, transform: 'translate(-50%, -50%)',
+                    background: '#2c3e30', color: '#e2e8f0', padding: '16px 40px',
+                    borderRadius: '12px', fontSize: '2.5rem', fontWeight: 800, letterSpacing: '1px', zIndex: -1,
+                    pointerEvents: 'none', boxShadow: '0 4px 15px rgba(0,0,0,0.3)'
+                }}>
+                    DOMINO!
+                </div>
                 {layout.items.map((it) => {
                     const isLeftTarget = isMyTurn && selectedBone && canLeft && it.index === 0;
                     const isRightTarget = isMyTurn && selectedBone && canRight && it.index === board.length - 1;

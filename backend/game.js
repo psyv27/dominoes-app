@@ -87,9 +87,17 @@ class DominoGame {
     removePlayer(socketId) {
         delete this.players[socketId];
         delete this.passTracking[socketId];
+
+        let nextPlayer = null;
+        if (this.turn === socketId && this.playerOrder.length > 1) {
+            nextPlayer = this._turnMgr.nextTurn(this.turn, this.playerOrder);
+            if (nextPlayer === socketId) nextPlayer = null;
+        }
+
         this.playerOrder = this.playerOrder.filter(id => id !== socketId);
-        if (this.turn === socketId) {
-            this.nextTurn();
+
+        if (nextPlayer) {
+            this.turn = nextPlayer;
         }
     }
 

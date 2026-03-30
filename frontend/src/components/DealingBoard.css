@@ -1,0 +1,153 @@
+/* ========================================
+   DEALING BOARD — Circular Ring Animation
+   ======================================== */
+
+.deal-arena {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(20, 22, 26, 0.92);
+    perspective: 1200px;
+}
+
+/* Central ring container — all tiles positioned absolutely inside */
+.deal-ring {
+    position: relative;
+    width: 400px;
+    height: 400px;
+}
+
+/* Individual tile wrapper */
+.deal-ring-tile {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 50px;
+    height: 100px;
+    transform-style: preserve-3d;
+    pointer-events: none;
+
+    /* Smooth transitions for ALL transform changes */
+    transition:
+        transform 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+        opacity 0.4s ease,
+        box-shadow 0.3s ease;
+}
+
+/* Phase 0 — Spawning in the ring (fast entrance) */
+.deal-ring-tile.spawning {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.3);
+    transition: opacity 0.35s ease-out, transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.deal-ring-tile.idle {
+    opacity: 1;
+    transition: opacity 0.35s ease-out, transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Phase 1 — Lifted off the table */
+.deal-ring-tile.lifting {
+    z-index: 100;
+    transition: transform 0.18s ease-out, box-shadow 0.18s ease;
+}
+
+.deal-ring-tile.lifting .deal-tile-inner {
+    transform: scale(1.15);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.5);
+}
+
+/* Phase 2 — Flying to player seat */
+.deal-ring-tile.flying {
+    z-index: 200;
+    transition: transform 0.55s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                opacity 0.3s ease;
+}
+
+.deal-ring-tile.flying .deal-tile-inner {
+    transform: scale(0.85);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: transform 0.4s ease, box-shadow 0.3s ease;
+}
+
+/* Phase 3 — Landed */
+.deal-ring-tile.landed {
+    opacity: 0;
+    transition: opacity 0.3s ease 0.1s;
+}
+
+/* Inner tile card (handles scale + shadow independent of position) */
+.deal-tile-inner {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    transform-style: preserve-3d;
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+/* Face-down back side */
+.deal-tile-face {
+    position: absolute;
+    inset: 0;
+    backface-visibility: hidden;
+}
+
+.deal-tile-back {
+    position: absolute;
+    inset: 0;
+    backface-visibility: hidden;
+    transform: rotateY(180deg);
+}
+
+/* Flip for local player's tiles */
+.deal-ring-tile.flip-reveal .deal-tile-inner {
+    transform: scale(0.85) rotateY(180deg);
+    transition: transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Player target labels (optional debug) */
+.deal-player-target {
+    position: absolute;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.35);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+/* Deal status text */
+.deal-status {
+    position: fixed;
+    bottom: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255, 255, 255, 0.45);
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    z-index: 2001;
+}
+
+/* Responsive: smaller ring on mobile */
+@media (max-width: 768px) {
+    .deal-ring {
+        width: 280px;
+        height: 280px;
+    }
+    .deal-ring-tile {
+        width: 38px;
+        height: 76px;
+    }
+}

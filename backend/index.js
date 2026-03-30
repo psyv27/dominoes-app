@@ -58,18 +58,98 @@ const io = new Server(server, {
 
 const roomManager = new RoomManager();
 const turnTimers = {}; // roomId -> { timer, secondsLeft }
+const drawTimers = {}; // roomId -> timeout reference
 const botInstances = {}; // roomId -> BotAI instance
 
-// ---- TURN TIMER ----
-function startTurnTimer(roomId) {
+// ---- TIMERS & FAILSAFES ----
+function clearDrawTimer(roomId) {
+    if (drawTimers[roomId]) {
+        clearTimeout(drawTimers[roomId]);
+        delete drawTimers[roomId];
+    }
+}
+
+function startDrawTimer(roomId, playerId) {
     clearTurnTimer(roomId);
+    clearDrawTimer(roomId);
     const room = roomManager.getRoom(roomId);
     if (!room || !room.game || room.game.state !== 'playing') return;
+
+    // Emits specifically to the frontend UI Agent to render the 7-second interactive boneyard view
+    io.to(roomId).emit('drawPhaseStart', { playerId, duration: 7 });
+    
+    drawTimers[roomId] = setTimeout(() => {
+        // Auto-draw failsafe
+        const currentRoom = roomManager.getRoom(roomId);
+        if (!currentRoom || !currentRoom.game || currentRoom.game.state !== 'playing' || currentRoom.game.turn !== playerId) return;
+        
+        const game = currentRoom.game;
+        const availableIndices = [...Array(28).keys()].filter(idx => !game.takenIndices.has(idx));
+        if (availableIndices.length === 0) return;
+        
+        const randomIdx = availableIndices[Math.floor(Math.random() * availableIndices.length)];
+        const result = game.drawBone(playerId, randomIdx);
+        
+        if (result.success) {
+            if (result.blocked && result.winner) {
+                handleRoundEnd(roomId, result);
+                return;
+            }
+            if (result.passed) {
+                io.to(roomId).emit('playerPassed', { playerId });
+                broadcastGameState(roomId);
+                startTurnTimer(roomId);
+                scheduleBotTurn(roomId);
+                return;
+            }
+            
+            io.to(playerId).emit('boneDrawn', { bone: result.drawnBone, canPlayNow: result.canPlayNow, deckRemaining: result.deckRemaining });
+            broadcastGameState(roomId);
+            
+            // Re-eval loops automatically:
+            if (!result.canPlayNow && game.deck.length > 0) {
+                startDrawTimer(roomId, playerId);
+            } else if (!result.canPlayNow && game.deck.length === 0) {
+                io.to(roomId).emit('playerPassed', { playerId });
+                game.nextTurn();
+                broadcastGameState(roomId);
+                startTurnTimer(roomId);
+                scheduleBotTurn(roomId);
+            } else {
+                startTurnTimer(roomId);
+                scheduleBotTurn(roomId);
+            }
+        }
+    }, 7000);
+}
+
+function startTurnTimer(roomId) {
+    clearTurnTimer(roomId);
+    clearDrawTimer(roomId);
+    const room = roomManager.getRoom(roomId);
+    if (!room || !room.game || room.game.state !== 'playing') return;
+
+    const game = room.game;
+    const currentTurn = game.turn;
+    const playerHand = game.players[currentTurn]?.hand;
+    
+    // Auto-draw intercept: if player has NO valid moves and boneyard is not empty
+    if (playerHand) {
+        const validMoves = game.getValidMoves(playerHand);
+        if (validMoves.length === 0) {
+            const availableIndices = [...Array(28).keys()].filter(idx => !game.takenIndices.has(idx));
+            if (availableIndices.length > 0) {
+                // Intercept and launch the interactive draw timer failsafe
+                startDrawTimer(roomId, currentTurn);
+                return;
+            }
+        }
+    }
 
     const duration = room.turnTimer || 10;
     let secondsLeft = duration;
 
-    io.to(roomId).emit('turnTimerStart', { secondsLeft, turn: room.game.turn });
+    io.to(roomId).emit('turnTimerStart', { secondsLeft, turn: currentTurn });
 
     turnTimers[roomId] = {
         secondsLeft,
@@ -191,8 +271,8 @@ async function processMatchOver(room, winnerId) {
             const lossIncr = !winners.includes(pId) ? 1 : 0;
 
             await db.query(
-                "UPDATE Users SET coins = coins + $1, games_played = games_played + 1, games_won = games_won + $2, games_lost = games_lost + $3, total_wins = total_wins + $2, total_games = total_games + 1 WHERE id = $4",
-                [prize, winIncr, lossIncr, dbId]
+                "UPDATE Users SET coins = coins + $1, games_lost = games_lost + $2, total_wins = total_wins + $3, total_games = total_games + 1 WHERE id = $4",
+                [prize, lossIncr, winIncr, dbId]
             );
         }
     } catch (err) {
@@ -337,94 +417,8 @@ function executeBotTurn(roomId, botId) {
     }
 }
 
-// ---- ANIMATED DEAL SEQUENCE ----
-const MAX_DEAL_REDEALS = 10;
-
-function startDealSequence(roomId) {
-    const room = roomManager.getRoom(roomId);
-    if (!room || !room.game) return;
-
-    const game = room.game;
-    const DEAL_DELAY = 200; // ms between each tile
-
-    game.dealOrder.forEach((deal, i) => {
-        setTimeout(() => {
-            // Guard: room may have been destroyed during dealing
-            const currentRoom = roomManager.getRoom(roomId);
-            if (!currentRoom || !currentRoom.game) return;
-
-            currentRoom.game.dealTileToPlayer(deal.tileIndex, deal.toPlayer);
-
-            io.to(roomId).emit('dealTile', {
-                tileIndex: deal.tileIndex,
-                toPlayer: deal.toPlayer,
-                dealStep: deal.dealStep,
-                totalDealt: i + 1,
-                totalToDeal: game.dealOrder.length
-            });
-
-            // After the last tile is dealt, finalize
-            if (i === game.dealOrder.length - 1) {
-                setTimeout(() => {
-                    const rm = roomManager.getRoom(roomId);
-                    if (!rm || !rm.game) return;
-
-                    const finalResult = rm.game.finalizeDeal();
-
-                    if (finalResult.misdeal) {
-                        // Get the invalid hand for reveal
-                        const misdealInfo = rm.game.getMisdealHand();
-                        io.to(roomId).emit('misdealReveal', {
-                            playerId: misdealInfo?.playerId,
-                            hand: misdealInfo?.hand,
-                            reason: finalResult.reason
-                        });
-
-                        // After 3.5s reveal, restart dealing (with cap)
-                        if (rm.game.misdealCount < MAX_DEAL_REDEALS) {
-                            setTimeout(() => {
-                                const rm2 = roomManager.getRoom(roomId);
-                                if (!rm2 || !rm2.game) return;
-
-                                rm2.game.prepareGame();
-                                io.to(roomId).emit('dealPhaseStart', {
-                                    fullDeck: rm2.game.fullDeck,
-                                    playerOrder: rm2.game.playerOrder,
-                                    dealOrder: rm2.game.dealOrder
-                                });
-                                startDealSequence(roomId);
-                            }, 3500);
-                        } else {
-                            // Too many misdeals — fall back to instant deal
-                            rm.game.startGame();
-                            io.to(roomId).emit('dealComplete', {
-                                boneyardIndices: [...Array(28).keys()].filter(idx => !rm.game.takenIndices.has(idx))
-                            });
-                            setTimeout(() => {
-                                broadcastGameState(roomId);
-                                startTurnTimer(roomId);
-                                scheduleBotTurn(roomId);
-                            }, 500);
-                        }
-                        return;
-                    }
-
-                    // No misdeal — transition to play
-                    io.to(roomId).emit('dealComplete', {
-                        boneyardIndices: [...Array(28).keys()].filter(idx => !rm.game.takenIndices.has(idx))
-                    });
-
-                    // Give time for boneyard formation animation
-                    setTimeout(() => {
-                        broadcastGameState(roomId);
-                        startTurnTimer(roomId);
-                        scheduleBotTurn(roomId);
-                    }, 1500);
-                }, 500); // brief pause after last deal
-            }
-        }, DEAL_DELAY * (i + 1));
-    });
-}
+// ---- ANIMATED DEAL SEQUENCE DELETED ----
+// Logic handled via 'dealAnimationComplete' socket listener to sync natively with the UI 
 
 // ---- SOCKET EVENTS ----
 io.on('connection', (socket) => {
@@ -441,6 +435,60 @@ io.on('connection', (socket) => {
     socket.emit('roomsUpdated', roomManager.getPublicRooms());
 
     // --- LOBBY ---
+    socket.on('dealAnimationComplete', (roomId) => {
+        const room = roomManager.getRoom(roomId);
+        if (!room || room.hostId !== socket.id || !room.game || room.game.state !== 'dealing') return;
+
+        const game = room.game;
+
+        // Instantly backend resolve the assignments that the UI agent just mapped
+        game.dealOrder.forEach(deal => {
+            game.dealTileToPlayer(deal.tileIndex, deal.toPlayer);
+        });
+
+        // Trigger Phase 3 natively
+        const finalResult = game.finalizeDeal();
+        if (finalResult.misdeal) {
+            const misdealInfo = game.getMisdealHand();
+            io.to(roomId).emit('misdealReveal', {
+                playerId: misdealInfo?.playerId,
+                hand: misdealInfo?.hand,
+                reason: finalResult.reason
+            });
+
+            if (game.misdealCount < 10) {
+                setTimeout(() => {
+                    const rm2 = roomManager.getRoom(roomId);
+                    if (!rm2 || !rm2.game) return;
+                    rm2.game.prepareGame();
+                    io.to(roomId).emit('dealPhaseStart', {
+                        fullDeck: rm2.game.fullDeck,
+                        playerOrder: rm2.game.playerOrder,
+                        dealOrder: rm2.game.dealOrder
+                    });
+                }, 3500);
+            } else {
+                game.startGame();
+                io.to(roomId).emit('dealComplete', {
+                    boneyardIndices: [...Array(28).keys()].filter(idx => !game.takenIndices.has(idx))
+                });
+                broadcastGameState(roomId);
+                startTurnTimer(roomId);
+                scheduleBotTurn(roomId);
+            }
+            return;
+        }
+
+        io.to(roomId).emit('dealComplete', {
+            boneyardIndices: [...Array(28).keys()].filter(idx => !game.takenIndices.has(idx))
+        });
+        
+        // Let's go! Sync and engage turn timers immediately
+        broadcastGameState(roomId);
+        startTurnTimer(roomId);
+        scheduleBotTurn(roomId);
+    });
+
     socket.on('getRooms', () => {
         socket.emit('roomsUpdated', roomManager.getPublicRooms());
     });
@@ -502,14 +550,16 @@ io.on('connection', (socket) => {
             socket.emit('roomJoined', room);
             io.to(roomId).emit('gameStarted', room);
 
-            // Emit deal phase start for animation
-            io.to(roomId).emit('dealPhaseStart', {
-                fullDeck: room.game.fullDeck,
-                playerOrder: room.game.playerOrder,
-                dealOrder: room.game.dealOrder
-            });
-
-            startDealSequence(roomId);
+            // Emit deal phase start for animation — dealAnimationComplete handshake handles the rest
+            setTimeout(() => {
+                const rm = roomManager.getRoom(roomId);
+                if (!rm || !rm.game) return;
+                io.to(roomId).emit('dealPhaseStart', {
+                    fullDeck: rm.game.fullDeck,
+                    playerOrder: rm.game.playerOrder,
+                    dealOrder: rm.game.dealOrder
+                });
+            }, 500);
         } else {
             socket.emit('roomJoined', room);
         }
@@ -661,6 +711,56 @@ io.on('connection', (socket) => {
         io.emit('roomsUpdated', roomManager.getPublicRooms());
     });
 
+    // --- START GAME (multiplayer) ---
+    socket.on('startGame', (roomId) => {
+        const room = roomManager.getRoom(roomId);
+        if (!room || room.hostId !== socket.id) return;
+        if (room.state !== 'waiting') return;
+
+        const startResult = roomManager.startGameWithDealing(roomId);
+        if (startResult.error) {
+            socket.emit('error', startResult.error);
+            return;
+        }
+
+        io.to(roomId).emit('gameStarted', room);
+
+        // Emit deal phase start for animation
+        setTimeout(() => {
+            const rm = roomManager.getRoom(roomId);
+            if (!rm || !rm.game) return;
+            io.to(roomId).emit('dealPhaseStart', {
+                fullDeck: rm.game.fullDeck,
+                playerOrder: rm.game.playerOrder,
+                dealOrder: rm.game.dealOrder
+            });
+        }, 500);
+    });
+
+    // --- NEXT ROUND ---
+    socket.on('nextRound', (roomId) => {
+        const room = roomManager.getRoom(roomId);
+        if (!room || room.hostId !== socket.id || !room.game) return;
+
+        room.currentRoundNumber = (room.currentRoundNumber || 1) + 1;
+        const startResult = roomManager.startGameWithDealing(roomId);
+        if (startResult.error) {
+            socket.emit('error', startResult.error);
+            return;
+        }
+
+        // Emit deal phase start for animation
+        setTimeout(() => {
+            const rm = roomManager.getRoom(roomId);
+            if (!rm || !rm.game) return;
+            io.to(roomId).emit('dealPhaseStart', {
+                fullDeck: rm.game.fullDeck,
+                playerOrder: rm.game.playerOrder,
+                dealOrder: rm.game.dealOrder
+            });
+        }, 500);
+    });
+
     socket.on('switchTeam', ({ roomId, team }) => {
         const room = roomManager.getRoom(roomId);
         if (!room || room.state !== 'waiting') return;
@@ -691,15 +791,13 @@ io.on('connection', (socket) => {
                 const game = room.game;
                 io.to(roomId).emit('gameStarted', room);
 
-                // Emit deal phase start — client shows 28 face-down tiles
+                // Emit deal phase start — UI Agent intercepts and runs dealing!
                 io.to(roomId).emit('dealPhaseStart', {
                     fullDeck: game.fullDeck,
                     playerOrder: game.playerOrder,
                     dealOrder: game.dealOrder
                 });
-
-                // Start the animated dealing sequence
-                startDealSequence(roomId);
+                // We await 'dealAnimationComplete' to start the turn timers.
             }
         }
     });
@@ -752,14 +850,13 @@ io.on('connection', (socket) => {
 
         io.to(roomId).emit('gameStarted', room);
 
-        // Emit deal phase start
+        // Emit deal phase start for the next round
         io.to(roomId).emit('dealPhaseStart', {
             fullDeck: room.game.fullDeck,
             playerOrder: room.game.playerOrder,
             dealOrder: room.game.dealOrder
         });
-
-        startDealSequence(roomId);
+        // We await 'dealAnimationComplete' from host
     });
 
     socket.on('drawBone', (payload) => {
@@ -795,7 +892,6 @@ io.on('connection', (socket) => {
             if (result.passed) {
                 socket.emit('playerPassed', { playerId: socket.id });
                 broadcastGameState(roomId);
-                clearTurnTimer(roomId);
                 startTurnTimer(roomId);
                 scheduleBotTurn(roomId);
                 return;
@@ -803,6 +899,20 @@ io.on('connection', (socket) => {
             socket.emit('boneDrawn', { bone: result.drawnBone, canPlayNow: result.canPlayNow, deckRemaining: result.deckRemaining });
             socket.emit('gameState', GameStateSerializer.serializeForPlayer(room.game, room, socket.id));
             broadcastGameState(roomId);
+            
+            // Re-eval looping draw checks internally
+            if (!result.canPlayNow && room.game.deck.length > 0) {
+                startDrawTimer(roomId, socket.id);
+            } else if (!result.canPlayNow && room.game.deck.length === 0) {
+                io.to(roomId).emit('playerPassed', { playerId: socket.id });
+                room.game.nextTurn();
+                broadcastGameState(roomId);
+                startTurnTimer(roomId);
+                scheduleBotTurn(roomId);
+            } else {
+                startTurnTimer(roomId);
+                scheduleBotTurn(roomId);
+            }
         } else {
             socket.emit('moveError', result.error);
         }

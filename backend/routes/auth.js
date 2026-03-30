@@ -6,30 +6,41 @@ const nodemailer = require('nodemailer');
 
 const router = express.Router();
 
-const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.ethereal.email',
-    port: process.env.SMTP_PORT || 587,
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
-    }
-});
+const SMTP_CONFIGURED = !!(process.env.SMTP_USER && process.env.SMTP_PASS);
+
+let transporter = null;
+if (SMTP_CONFIGURED) {
+    transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST || 'smtp.ethereal.email',
+        port: process.env.SMTP_PORT || 587,
+        auth: {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS
+        }
+    });
+}
 
 function generateOTP() {
     return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
 async function sendOTPEmail(email, otp) {
+    if (!transporter) {
+        console.log(`[DEV MODE] OTP for ${email}: ${otp} (SMTP not configured, email not sent)`);
+        return false;
+    }
     try {
         await transporter.sendMail({
             from: '"Dominoes Master" <no-reply@dominoesmaster.com>',
-            to: email, // list of receivers
-            subject: 'Your Verification Code', // Subject line
-            text: `Your verification code is: ${otp}\nIt will expire in 10 minutes.` // plain text body
+            to: email,
+            subject: 'Your Verification Code',
+            text: `Your verification code is: ${otp}\nIt will expire in 10 minutes.`
         });
         console.log(`[Email Sent] OTP to ${email}: ${otp}`);
+        return true;
     } catch (err) {
         console.error('Failed to send OTP email:', err);
+        return false;
     }
 }
 
@@ -56,6 +67,22 @@ router.post('/register', async (req, res) => {
             "INSERT INTO Users (email, username, password_hash, nickname, is_verified, otp_code, otp_expiry) VALUES ($1, $2, $3, $4, 0, $5, DATEADD(minute, 10, GETDATE())) RETURNING id",
             [email, username, hashedPassword, nickname, otp]
         );
+
+        // If SMTP is not configured, auto-verify the user and return a token immediately
+        if (!SMTP_CONFIGURED) {
+            console.log(`[DEV MODE] Auto-verifying user ${username} (no SMTP configured)`);
+            await db.query(
+                "UPDATE Users SET is_verified = 1, otp_code = NULL, otp_expiry = NULL WHERE email = $1",
+                [email]
+            );
+            const userId = result.rows[0].id;
+            const token = jwt.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn: '7d' });
+            const userResult = await db.query(
+                'SELECT id, username, email, nickname, avatar, xp, rank_level, total_wins, total_games, coins FROM Users WHERE id = $1',
+                [userId]
+            );
+            return res.json({ token, user: userResult.rows[0] });
+        }
 
         await sendOTPEmail(email, otp);
 
@@ -86,14 +113,22 @@ router.post('/login', async (req, res) => {
             return res.status(400).json({ error: 'Invalid credentials' });
         }
 
-        if (user.is_verified === false) {
-            const otp = generateOTP();
-            await db.query(
-                "UPDATE Users SET otp_code = $1, otp_expiry = DATEADD(minute, 10, GETDATE()) WHERE id = $2",
-                [otp, user.id]
-            );
-            await sendOTPEmail(user.email, otp);
-            return res.status(403).json({ error: 'pending_verification', email: user.email });
+        if (user.is_verified === false || user.is_verified === 0) {
+            // If SMTP is not configured, auto-verify on login attempt
+            if (!SMTP_CONFIGURED) {
+                await db.query(
+                    "UPDATE Users SET is_verified = 1, otp_code = NULL, otp_expiry = NULL WHERE id = $1",
+                    [user.id]
+                );
+            } else {
+                const otp = generateOTP();
+                await db.query(
+                    "UPDATE Users SET otp_code = $1, otp_expiry = DATEADD(minute, 10, GETDATE()) WHERE id = $2",
+                    [otp, user.id]
+                );
+                await sendOTPEmail(user.email, otp);
+                return res.status(403).json({ error: 'pending_verification', email: user.email });
+            }
         }
 
         const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });

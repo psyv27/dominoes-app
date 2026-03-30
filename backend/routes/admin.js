@@ -7,7 +7,7 @@ const router = express.Router();
 router.get('/users', async (req, res) => {
     try {
         const result = await db.query(
-            'SELECT id, username, nickname, avatar, rank_level, coins, games_played, games_won, games_lost, games_drawn FROM Users'
+            'SELECT id, username, nickname, avatar, rank_level, coins, total_games as games_played, total_wins as games_won, games_lost, games_drawn FROM Users'
         );
         res.json(result.rows);
     } catch (err) {
