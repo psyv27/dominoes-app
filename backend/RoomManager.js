@@ -129,17 +129,21 @@ class RoomManager {
         const room = this.rooms[roomId];
         if (!room) return;
 
-        const botNames = ['Bot Alpha', 'Bot Beta', 'Bot Gamma'];
         const botColors = ['#26a5c9', '#e8a030', '#9c5ec4'];
+        
+        // Find existing amount of bots to incrementally name new bots natively
+        const currentBotCount = Object.values(room.players).filter(p => p?.isBot).length;
 
         for (let i = 0; i < count && Object.keys(room.players).length < 4; i++) {
             const botId = `bot-${uuidv4().substring(0, 6)}`;
+            const botSequentialNumber = currentBotCount + i + 1;
+            
             room.players[botId] = {
-                nickname: botNames[i] || `Bot ${i + 1}`,
+                nickname: `Bot ${botSequentialNumber}`, // i.e. Bot 1, Bot 2
                 isGuest: true,
-                isBot: true,
+                isBot: true, // EXPLICIT IDENTIFIER HERE
                 botDifficulty: difficulty,
-                botColor: botColors[i] || '#888',
+                botColor: botColors[i % 3] || '#888',
                 socketId: botId,
                 team: null,
                 ready: true

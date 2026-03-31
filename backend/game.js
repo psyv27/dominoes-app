@@ -406,6 +406,7 @@ class DominoGame {
                 return this._buildWinResult(socketId, pointsEarnedThisTurn, 'domino');
             }
 
+            this.lastPlayerToMove = socketId;
             this.nextTurn();
             return { success: true, pointsEarnedThisTurn };
         }

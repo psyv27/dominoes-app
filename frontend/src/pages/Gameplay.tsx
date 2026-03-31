@@ -3,7 +3,7 @@ import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import Domino from '../components/Domino';
-import { TrophyOutlined, StepForwardOutlined, LogoutOutlined, LeftOutlined, SmileOutlined, MessageOutlined } from '@ant-design/icons';
+import { TrophyOutlined, StepForwardOutlined, LeftOutlined } from '@ant-design/icons';
 import { Button, Tooltip, Avatar, Badge, Tag, Popconfirm } from 'antd';
 import BoardLayout from '../components/BoardLayout';
 import DealingBoard from '../components/DealingBoard';
@@ -44,12 +44,19 @@ export default function Gameplay({ room }: any) {
     const [misdealPopup, setMisdealPopup] = useState<string | null>(null);
     const [quickMsgs, setQuickMsgs] = useState<string[]>([]);
     const [selectedBone, setSelectedBone] = useState<any>(null); // NEW: Track selected bone for drop zones
+    
+    // Minimalist Casino Additions
+    const [actionLog, setActionLog] = useState<{ id: string, msg: string, isYou: boolean, ts: number }[]>([]);
+    const [activePopover, setActivePopover] = useState<string | null>(null);
+    const actionLogTurnRef = useRef<string | null>(null);
+    const prevBoardRef = useRef<any[]>([]);
     const [activeStickers, setActiveStickers] = useState<{ [id: string]: { id: string, url?: string } }>({});
     const [showStickerPicker, setShowStickerPicker] = useState(false);
     const [customStickers, setCustomStickers] = useState<any[]>([]);
     const STICKERS = ['happy', 'angry', 'shocked', 'sad', 'laughing', 'cool', 'winking'];
     const prevTurnRef = useRef<string | null>(null);
     const misdealShownRef = useRef(false);
+    const autoPassRef = useRef(false);
 
     // ── Dealing Phase State ──────────────────────────────────────
     const [dealPhase, setDealPhase] = useState<'none' | 'dealing' | 'misdeal' | 'complete'>('none');
@@ -94,24 +101,48 @@ export default function Gameplay({ room }: any) {
                 setTurnPopup(true);
                 setTimeout(() => setTurnPopup(false), 1800);
             }
+
+            // Detect played bones for action log
+            if (state.board && prevBoardRef.current) {
+                if (state.board.length > prevBoardRef.current.length && actionLogTurnRef.current) {
+                    const playedBy = actionLogTurnRef.current;
+                    const nick = playedBy === socket.id ? 'You' : (room.players[playedBy]?.nickname || 'Someone');
+                    
+                    let addedBone;
+                    if (prevBoardRef.current.length === 0) addedBone = state.board[0];
+                    else if (state.board[0].left !== prevBoardRef.current[0].left || state.board[0].right !== prevBoardRef.current[0].right) {
+                        addedBone = state.board[0];
+                    } else {
+                        addedBone = state.board[state.board.length - 1];
+                    }
+                    if (addedBone) {
+                        setActionLog(prev => [...prev.slice(-15), { id: Math.random().toString(), msg: `${nick} played ${addedBone.left}-${addedBone.right}`, isYou: playedBy === socket.id, ts: Date.now() }]);
+                    }
+                }
+            }
+            prevBoardRef.current = state.board || [];
+            actionLogTurnRef.current = state.turn;
+
         });
 
         socket.on('roundEnd', (data: any) => setRoundOverData(data));
         socket.on('matchOver', (data: any) => setMatchOverData(data));
         socket.on('moveError', () => { });
 
-        // When a bone is drawn from boneyard
+        // When a bone is drawn from boneyard (Local only)
         socket.on('boneDrawn', (data: any) => {
             setDrawingBone(false);
+            setActionLog(prev => [...prev.slice(-15), { id: Math.random().toString(), msg: `You drew a tile`, isYou: true, ts: Date.now() }]);
             if (data.canPlayNow) {
                 setDrawPhase(null);
             }
         });
 
-        // When a player passes (shown to that player)
+        // When a player passes (Local only)
         socket.on('playerPassed', () => {
             setBlockedPopup(true);
             setDrawPhase(null);
+            setActionLog(prev => [...prev.slice(-15), { id: Math.random().toString(), msg: `You passed`, isYou: true, ts: Date.now() }]);
             setTimeout(() => setBlockedPopup(false), 1200);
         });
 
@@ -143,7 +174,8 @@ export default function Gameplay({ room }: any) {
         });
 
         socket.on('playerAutoAction', (data: any) => {
-            // Another player was auto-passed (timeout or bot pass)
+            const nick = room.players[data.playerId]?.nickname || 'Bot';
+            setActionLog(prev => [...prev.slice(-15), { id: Math.random().toString(), msg: `${nick} passed`, isYou: false, ts: Date.now() }]);
         });
 
         socket.on('emojiReceived', (data: any) => {
@@ -171,20 +203,11 @@ export default function Gameplay({ room }: any) {
         // ── Drawing Phase Events ─────────────────────────────────
         socket.on('drawPhaseStart', (data: any) => {
             setDrawPhase({ active: true, playerId: data.playerId, countdown: data.duration || 7 });
-            if (drawIntervalRef.current) clearInterval(drawIntervalRef.current);
-            drawIntervalRef.current = setInterval(() => {
-                setDrawPhase(prev => {
-                    if (!prev || prev.countdown <= 1) {
-                        clearInterval(drawIntervalRef.current);
-                        return { ...prev, countdown: 0, active: prev?.active || false, playerId: prev?.playerId || '' };
-                    }
-                    return { ...prev, countdown: prev.countdown - 1 };
-                });
-            }, 1000);
         });
 
         // ── Dealing Phase Events ─────────────────────────────────
         socket.on('dealPhaseStart', (data: any) => {
+            misdealShownRef.current = false; // Reset misdeal reporting
             setDealPhase('dealing');
             setDealAnimationData({
                 fullDeck: data.fullDeck,
@@ -231,16 +254,44 @@ export default function Gameplay({ room }: any) {
 
     useEffect(() => {
         if (!socket) return;
-        socket.on('availableStickers', (stickers: any[]) => {
-            setCustomStickers(stickers);
-        });
+        
+        const onStickers = (stickers: any[]) => setCustomStickers(stickers);
+        socket.on('availableStickers', onStickers);
         socket.emit('getAvailableStickers');
+        
+        return () => {
+            socket.off('availableStickers', onStickers);
+        };
     }, [socket]);
+    
+    // Process draw phase logic safely separated from socket subscriptions
+    useEffect(() => {
+        if (drawPhase && drawPhase.countdown > 0) {
+            if (drawIntervalRef.current) clearInterval(drawIntervalRef.current);
+            drawIntervalRef.current = setInterval(() => {
+                setDrawPhase(prev => {
+                    if (!prev || prev.countdown <= 1) {
+                        clearInterval(drawIntervalRef.current);
+                        return { ...prev, countdown: 0, active: prev?.active || false, playerId: prev?.playerId || '' };
+                    }
+                    return { ...prev, countdown: prev.countdown - 1 };
+                });
+            }, 1000);
+        } else if (drawPhase?.countdown === 0) {
+            if (drawIntervalRef.current) {
+                clearInterval(drawIntervalRef.current);
+                drawIntervalRef.current = null;
+            }
+        }
+    }, [drawPhase?.countdown, drawPhase?.playerId]);
 
     // Auto-detect when current player is blocked (no valid moves & deck empty)
     useEffect(() => {
         if (!gameState || !socket) return;
-        if (gameState.turn !== socket.id) return;
+        if (gameState.turn !== socket.id) {
+            autoPassRef.current = false;
+            return;
+        }
 
         const board = gameState.board;
         const hand = gameState.hand;
@@ -257,12 +308,15 @@ export default function Gameplay({ room }: any) {
 
         if (!hasValidMove) {
             if (gameState.deckCount === 0) {
-                // Player is blocked — show popup and auto-pass after delay
-                setBlockedPopup(true);
-                setTimeout(() => {
-                    setBlockedPopup(false);
-                    socket.emit('drawBone', room.id); // this will pass the turn
-                }, 1500);
+                if (!autoPassRef.current) {
+                    autoPassRef.current = true;
+                    // Player is blocked — show popup and auto-pass after delay
+                    setBlockedPopup(true);
+                    setTimeout(() => {
+                        setBlockedPopup(false);
+                        socket.emit('drawBone', room.id); // this will pass the turn
+                    }, 1500);
+                }
             } else {
                 setMustDrawPopup(true);
             }
@@ -424,7 +478,7 @@ export default function Gameplay({ room }: any) {
                             localPlayerId={socket.id}
                             onComplete={() => {
                                 if (room?.hostId === socket.id) {
-                                    socket.emit('dealAnimationComplete', room?.id);
+                                    socket.emit('dealing_animation_complete', room?.id);
                                 }
                             }}
                         />
@@ -583,22 +637,25 @@ export default function Gameplay({ room }: any) {
 
             {/* NEW HUD */}
             <div className="hud-top-left">
-                <span>Room Code: <span className="rc-highlight">#{room.id.slice(0, 6).toUpperCase()}</span></span>
+                <span>Room Code: <span className="rc-highlight">#{room.id.slice(0, 8).toUpperCase()}</span></span>
                 <span>Total Pot: <span className="rc-highlight">{room.matchFormat === 'Score' ? room.targetScore : '0'} Coins</span></span>
             </div>
 
             <div className="hud-top-center">
                 <span><i className="fas fa-th-large"></i> {room.gameMode}</span>
-                <span><i className="fas fa-coins"></i> 500</span>
+                <span><i className="fas fa-coins"></i> {user?.coins || 0}</span>
                 <span><i className="fas fa-trophy"></i> {room.matchFormat === 'Score' ? room.targetScore : 'Win'}</span>
             </div>
 
             {/* ACTION LOG PANEL */}
-            <div className="action-log-panel">
+            <div className="action-log-panel" ref={(el) => { if (el) el.scrollTop = el.scrollHeight; }}>
                 <span className="action-log-title">Action Log</span>
-                <span className="log-entry">Game started</span>
-                <span className="log-entry">Dealing tiles...</span>
-                <span className="log-entry recent">Waiting for moves</span>
+                {actionLog.length === 0 && <span className="log-entry recent">Waiting for moves...</span>}
+                {actionLog.map(log => (
+                    <span key={log.id} className={`log-entry ${log.isYou ? 'log-entry-you' : ''}`}>
+                        {log.msg}
+                    </span>
+                ))}
             </div>
             
             {/* TABLE with players around */}
@@ -622,12 +679,24 @@ export default function Gameplay({ room }: any) {
                                 </div>
                                 <div className="status-dot"></div>
                             </div>
-                            <div className="seat-avatar-wrap">
+                            <div className="seat-avatar-wrap" onClick={() => setActivePopover(activePopover === id ? null : id)}>
                                 <div className="avatar-circle-main">
                                     <i className="fas fa-user" style={{ fontSize: '0.9rem' }}></i>
                                 </div>
                                 {isTurn && timerSeconds > 0 && (
                                     <span className="timer-text-pill">{timerSeconds}s</span>
+                                )}
+                                {activePopover === id && (
+                                    <div className="player-popup-menu" onClick={e => e.stopPropagation()}>
+                                        <div className="pp-name">{player?.nickname}</div>
+                                        <div className="pp-stat">Win Rate: {player?.total_games > 0 ? Math.round((player?.total_wins / player?.total_games) * 100) : 0}%</div>
+                                        {!player?.isBot && (
+                                            <>
+                                                <button className="pp-btn">Add Friend</button>
+                                                <button className="pp-btn">Block</button>
+                                            </>
+                                        )}
+                                    </div>
                                 )}
                             </div>
                             <div className="seat-meta">

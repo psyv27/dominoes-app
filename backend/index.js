@@ -12,6 +12,8 @@ const RoomManager = require('./RoomManager');
 const DominoGame = require('./game');
 const BotAI = require('./BotAI');
 const db = require('./db');
+const swaggerUi = require('swagger-ui-express');
+const swaggerDocument = require('./swagger.json');
 const InputValidator = require('./engine/InputValidator');
 const GameStateSerializer = require('./engine/GameStateSerializer');
 
@@ -30,6 +32,8 @@ app.use(express.json());
 
 app.use('/auth', authRoutes);
 app.use('/admin', adminRoutes);
+
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 app.get('/', (req, res) => {
     res.send('Backend is alive on 5001');
@@ -139,9 +143,13 @@ function startTurnTimer(roomId) {
         if (validMoves.length === 0) {
             const availableIndices = [...Array(28).keys()].filter(idx => !game.takenIndices.has(idx));
             if (availableIndices.length > 0) {
-                // Intercept and launch the interactive draw timer failsafe
-                startDrawTimer(roomId, currentTurn);
-                return;
+                // Determine if this logic applies to a bot or a real player
+                const player = room.players[currentTurn];
+                if (!player || !player.isBot) {
+                    // Intercept and launch the interactive draw timer failsafe ONLY for humans
+                    startDrawTimer(roomId, currentTurn);
+                    return;
+                }
             }
         }
     }
@@ -205,9 +213,14 @@ function handleAutoPass(roomId) {
                     else end = 'left';
                 }
                 const playResult = room.game.playBone(currentTurn, bone, end);
-                if (playResult.success && playResult.winner) {
-                    handleRoundEnd(roomId, playResult);
-                    return;
+                if (playResult.success) {
+                    if (playResult.pointsEarnedThisTurn > 0) {
+                        room.scores[currentTurn] = (room.scores[currentTurn] || 0) + playResult.pointsEarnedThisTurn;
+                    }
+                    if (playResult.winner) {
+                        handleRoundEnd(roomId, playResult);
+                        return;
+                    }
                 }
             }
         }
@@ -255,8 +268,8 @@ async function processMatchOver(room, winnerId) {
             } else {
                 if (numPlayers === 4) {
                     if (pId === winnerId) prize = entryFee * 2;
-                    else if (i === 1) prize = entryFee * 1;
-                    else if (i === 2) prize = entryFee;
+                    else if (i === 1) prize = entryFee * 1.5;
+                    else if (i === 2) prize = entryFee * 0.5;
                     else prize = 0;
                 } else if (numPlayers === 3) {
                     if (pId === winnerId) prize = entryFee * 2;
@@ -332,7 +345,13 @@ function handleRoundEnd(roomId, result) {
     }
 
     if (!matchOver) {
-        io.to(roomId).emit('roundEnd', { winner: result.winner, reason: result.reason, scores: room.scores, roundWins: room.roundWins });
+        io.to(roomId).emit('roundEnd', { 
+            winner: result.winner, 
+            reason: result.reason, 
+            scores: room.scores, 
+            roundWins: room.roundWins,
+            allHands: result.allHands 
+        });
     }
     broadcastGameState(roomId);
 }
@@ -435,7 +454,7 @@ io.on('connection', (socket) => {
     socket.emit('roomsUpdated', roomManager.getPublicRooms());
 
     // --- LOBBY ---
-    socket.on('dealAnimationComplete', (roomId) => {
+    socket.on('dealing_animation_complete', (roomId) => {
         const room = roomManager.getRoom(roomId);
         if (!room || room.hostId !== socket.id || !room.game || room.game.state !== 'dealing') return;
 
@@ -711,55 +730,9 @@ io.on('connection', (socket) => {
         io.emit('roomsUpdated', roomManager.getPublicRooms());
     });
 
-    // --- START GAME (multiplayer) ---
-    socket.on('startGame', (roomId) => {
-        const room = roomManager.getRoom(roomId);
-        if (!room || room.hostId !== socket.id) return;
-        if (room.state !== 'waiting') return;
+    // Handled in line 777
 
-        const startResult = roomManager.startGameWithDealing(roomId);
-        if (startResult.error) {
-            socket.emit('error', startResult.error);
-            return;
-        }
-
-        io.to(roomId).emit('gameStarted', room);
-
-        // Emit deal phase start for animation
-        setTimeout(() => {
-            const rm = roomManager.getRoom(roomId);
-            if (!rm || !rm.game) return;
-            io.to(roomId).emit('dealPhaseStart', {
-                fullDeck: rm.game.fullDeck,
-                playerOrder: rm.game.playerOrder,
-                dealOrder: rm.game.dealOrder
-            });
-        }, 500);
-    });
-
-    // --- NEXT ROUND ---
-    socket.on('nextRound', (roomId) => {
-        const room = roomManager.getRoom(roomId);
-        if (!room || room.hostId !== socket.id || !room.game) return;
-
-        room.currentRoundNumber = (room.currentRoundNumber || 1) + 1;
-        const startResult = roomManager.startGameWithDealing(roomId);
-        if (startResult.error) {
-            socket.emit('error', startResult.error);
-            return;
-        }
-
-        // Emit deal phase start for animation
-        setTimeout(() => {
-            const rm = roomManager.getRoom(roomId);
-            if (!rm || !rm.game) return;
-            io.to(roomId).emit('dealPhaseStart', {
-                fullDeck: rm.game.fullDeck,
-                playerOrder: rm.game.playerOrder,
-                dealOrder: rm.game.dealOrder
-            });
-        }, 500);
-    });
+    // Handled in line 840
 
     socket.on('switchTeam', ({ roomId, team }) => {
         const room = roomManager.getRoom(roomId);
@@ -835,7 +808,7 @@ io.on('connection', (socket) => {
     socket.on('nextRound', (roomId) => {
         const room = roomManager.getRoom(roomId);
         if (!room || room.hostId !== socket.id) return;
-        if (room.state === 'finished') return;
+        if (room.state === 'playing') return; // Cannot start next round while playing
 
         room.currentRoundNumber++;
         room.state = 'playing';
@@ -905,7 +878,6 @@ io.on('connection', (socket) => {
                 startDrawTimer(roomId, socket.id);
             } else if (!result.canPlayNow && room.game.deck.length === 0) {
                 io.to(roomId).emit('playerPassed', { playerId: socket.id });
-                room.game.nextTurn();
                 broadcastGameState(roomId);
                 startTurnTimer(roomId);
                 scheduleBotTurn(roomId);

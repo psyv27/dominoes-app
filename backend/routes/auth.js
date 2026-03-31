@@ -338,6 +338,11 @@ router.post('/friend-request', (req, res) => {
         const { toId } = req.body;
         if (!toId || toId === decoded.id) return res.status(400).json({ error: 'Invalid target' });
         
+        // FAST-FAIL GUARD: Check if Target is a Bot
+        if (String(toId).startsWith('bot-')) {
+            return res.status(400).json({ error: 'Cannot interact with bots' });
+        }
+        
         const result = db.sendFriendRequest(decoded.id, toId);
         if (result.error) return res.status(400).json(result);
         res.json(result);
@@ -396,6 +401,11 @@ router.post('/block', (req, res) => {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         const { blockedId } = req.body;
         if (!blockedId || blockedId === decoded.id) return res.status(400).json({ error: 'Invalid target' });
+        
+        // FAST-FAIL GUARD: Check if Target is a Bot
+        if (String(blockedId).startsWith('bot-')) {
+            return res.status(400).json({ error: 'Cannot interact with bots' });
+        }
         
         const result = db.blockUser(decoded.id, blockedId);
         if (result.error) return res.status(400).json(result);
