@@ -8,6 +8,7 @@ import Inventory from './pages/Inventory';
 import Profile from './pages/Profile';
 import Friends from './pages/Friends';
 import Admin from './pages/Admin';
+import DashboardLayout from './components/DashboardLayout';
 import './App.css';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
