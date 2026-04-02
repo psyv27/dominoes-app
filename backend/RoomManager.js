@@ -14,6 +14,7 @@ class RoomManager {
     constructor() {
         this.rooms = {}; // roomId -> room object
         this.socketToRoom = {}; // socketId -> roomId
+        this.disconnectTimeouts = {}; // socketId -> timeoutId
     }
 
     createRoom(hostId, hostDetails, settings) {
@@ -129,22 +130,106 @@ class RoomManager {
         const room = this.rooms[roomId];
         if (!room) return;
 
-        const botNames = ['Bot Alpha', 'Bot Beta', 'Bot Gamma'];
         const botColors = ['#26a5c9', '#e8a030', '#9c5ec4'];
+        
+        // Find existing amount of bots to incrementally name new bots natively
+        const currentBotCount = Object.values(room.players).filter(p => p?.isBot).length;
 
         for (let i = 0; i < count && Object.keys(room.players).length < 4; i++) {
             const botId = `bot-${uuidv4().substring(0, 6)}`;
+            const botSequentialNumber = currentBotCount + i + 1;
+            
             room.players[botId] = {
-                nickname: botNames[i] || `Bot ${i + 1}`,
+                nickname: `Bot ${botSequentialNumber}`, // i.e. Bot 1, Bot 2
                 isGuest: true,
-                isBot: true,
+                isBot: true, // EXPLICIT IDENTIFIER HERE
                 botDifficulty: difficulty,
-                botColor: botColors[i] || '#888',
+                botColor: botColors[i % 3] || '#888',
                 socketId: botId,
                 team: null,
                 ready: true
             };
         }
+    }
+
+    startDisconnectGracePeriod(socketId, onGracePeriodExpired) {
+        const roomId = this.socketToRoom[socketId];
+        if (!roomId) return null;
+        
+        const room = this.rooms[roomId];
+        if (!room) return null;
+
+        // If they are not in a playing game, disconnect them instantly
+        if (room.state !== 'playing' || room.isSinglePlayer) {
+            return this.leaveRoom(socketId);
+        }
+
+        let isDisconnectedByTimeout = false;
+
+        // Start 60 second grace period
+        this.disconnectTimeouts[socketId] = setTimeout(() => {
+            isDisconnectedByTimeout = true;
+            delete this.disconnectTimeouts[socketId];
+            
+            // Proceed to actually kick them out
+            const result = this.leaveRoom(socketId);
+            if (result && result.room && onGracePeriodExpired) {
+                onGracePeriodExpired(result, socketId);
+            }
+        }, 60000);
+
+        return { room, gracePeriodStarted: true };
+    }
+
+    reconnectPlayer(newSocketId, userId) {
+        // Find if this user was in any room recently
+        for (const [socketId, roomId] of Object.entries(this.socketToRoom)) {
+            const room = this.rooms[roomId];
+            if (room && room.players[socketId] && room.players[socketId].id === userId) {
+                // Determine if they were in a grace period timeout
+                if (this.disconnectTimeouts[socketId]) {
+                    clearTimeout(this.disconnectTimeouts[socketId]);
+                    delete this.disconnectTimeouts[socketId];
+                }
+
+                // Swap the old socket ID reference for the new one
+                room.players[newSocketId] = room.players[socketId];
+                room.players[newSocketId].socketId = newSocketId;
+                room.scores[newSocketId] = room.scores[socketId] || 0;
+                room.roundWins[newSocketId] = room.roundWins[socketId] || 0;
+                
+                if (room.hostId === socketId) {
+                    room.hostId = newSocketId;
+                }
+
+                if (room.game) {
+                    // Find player in game state
+                    if (room.game.players[socketId]) {
+                        room.game.players[newSocketId] = room.game.players[socketId];
+                        delete room.game.players[socketId];
+                    }
+                    // Update turn markers
+                    if (room.game.turn === socketId) room.game.turn = newSocketId;
+                    
+                    // Update playerOrder arrays
+                    const orderIdx = room.game.playerOrder.indexOf(socketId);
+                    if (orderIdx !== -1) room.game.playerOrder[orderIdx] = newSocketId;
+
+                    const dealIdx = room.game.dealOrder.findIndex(d => d.toPlayer === socketId);
+                    if (dealIdx !== -1) room.game.dealOrder[dealIdx].toPlayer = newSocketId;
+                }
+
+                delete room.players[socketId];
+                delete room.scores[socketId];
+                delete room.roundWins[socketId];
+                delete this.socketToRoom[socketId];
+
+                this.socketToRoom[newSocketId] = roomId;
+
+                return { success: true, room, oldSocketId: socketId };
+            }
+        }
+        return { success: false };
     }
 
     leaveRoom(socketId) {
@@ -183,6 +268,11 @@ class RoomManager {
                 room.state = 'waiting';
                 room.game = null;
                 aborted = true;
+            }
+
+            if (this.disconnectTimeouts[socketId]) {
+                clearTimeout(this.disconnectTimeouts[socketId]);
+                delete this.disconnectTimeouts[socketId];
             }
 
             return { room, destroyed, aborted };

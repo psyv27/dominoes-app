@@ -3,9 +3,10 @@ import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import Domino from '../components/Domino';
-import { TrophyOutlined, StepForwardOutlined, LogoutOutlined, LeftOutlined, SmileOutlined, MessageOutlined } from '@ant-design/icons';
+import { TrophyOutlined, StepForwardOutlined, LeftOutlined } from '@ant-design/icons';
 import { Button, Tooltip, Avatar, Badge, Tag, Popconfirm } from 'antd';
 import BoardLayout from '../components/BoardLayout';
+import DealingBoard from '../components/DealingBoard';
 import './Gameplay.css';
 
 const ALL_SKINS: Record<string, { name: string; type: string; preview: string; color?: string; bg?: string }> = {
@@ -16,7 +17,7 @@ const ALL_SKINS: Record<string, { name: string; type: string; preview: string; c
     gold: { name: 'Royal Gold', type: 'domino', preview: '#f9a825', color: '#000' },
     purple: { name: 'Deep Purple', type: 'domino', preview: '#4a148c', color: '#ce93d8' },
     dark: { name: 'Slate Blue', type: 'table', preview: '', bg: '#344555' },
-    felt: { name: 'Casino Felt', type: 'table', preview: '', bg: '#2b4f36' },
+    felt: { name: 'Casino Felt', type: 'table', preview: '', bg: '#366841' },
     ocean: { name: 'Deep Ocean', type: 'table', preview: '', bg: '#1c2e42' },
     sunset: { name: 'Sunset Amber', type: 'table', preview: '', bg: '#42281c' },
     royal: { name: 'Royal Velvet', type: 'table', preview: '', bg: '#281c42' },
@@ -43,19 +44,28 @@ export default function Gameplay({ room }: any) {
     const [misdealPopup, setMisdealPopup] = useState<string | null>(null);
     const [quickMsgs, setQuickMsgs] = useState<string[]>([]);
     const [selectedBone, setSelectedBone] = useState<any>(null); // NEW: Track selected bone for drop zones
+    
+    // Minimalist Casino Additions
+    const [actionLog, setActionLog] = useState<{ id: string, msg: string, isYou: boolean, ts: number }[]>([]);
+    const [activePopover, setActivePopover] = useState<string | null>(null);
+    const actionLogTurnRef = useRef<string | null>(null);
+    const prevBoardRef = useRef<any[]>([]);
     const [activeStickers, setActiveStickers] = useState<{ [id: string]: { id: string, url?: string } }>({});
     const [showStickerPicker, setShowStickerPicker] = useState(false);
     const [customStickers, setCustomStickers] = useState<any[]>([]);
     const STICKERS = ['happy', 'angry', 'shocked', 'sad', 'laughing', 'cool', 'winking'];
     const prevTurnRef = useRef<string | null>(null);
     const misdealShownRef = useRef(false);
+    const autoPassRef = useRef(false);
 
     // ── Dealing Phase State ──────────────────────────────────────
     const [dealPhase, setDealPhase] = useState<'none' | 'dealing' | 'misdeal' | 'complete'>('none');
-    const [dealDeck, setDealDeck] = useState<any[]>([]);           // 28 face-down tiles
-    const [dealtTiles, setDealtTiles] = useState<Set<number>>(new Set()); // indices being dealt
-    const [dealingToPlayer, setDealingToPlayer] = useState<string | null>(null);
+    const [dealAnimationData, setDealAnimationData] = useState<{ fullDeck: any[]; dealOrder: any[]; playerOrder: string[] } | null>(null);
     const [misdealRevealData, setMisdealRevealData] = useState<any>(null);
+
+    // ── Draw Phase State ─────────────────────────────────────────
+    const [drawPhase, setDrawPhase] = useState<{ active: boolean, playerId: string, countdown: number } | null>(null);
+    const drawIntervalRef = useRef<any>(null);
 
     useEffect(() => {
         // Fetch custom quick messages from admin panel
@@ -91,21 +101,48 @@ export default function Gameplay({ room }: any) {
                 setTurnPopup(true);
                 setTimeout(() => setTurnPopup(false), 1800);
             }
+
+            // Detect played bones for action log
+            if (state.board && prevBoardRef.current) {
+                if (state.board.length > prevBoardRef.current.length && actionLogTurnRef.current) {
+                    const playedBy = actionLogTurnRef.current;
+                    const nick = playedBy === socket.id ? 'You' : (room.players[playedBy]?.nickname || 'Someone');
+                    
+                    let addedBone;
+                    if (prevBoardRef.current.length === 0) addedBone = state.board[0];
+                    else if (state.board[0].left !== prevBoardRef.current[0].left || state.board[0].right !== prevBoardRef.current[0].right) {
+                        addedBone = state.board[0];
+                    } else {
+                        addedBone = state.board[state.board.length - 1];
+                    }
+                    if (addedBone) {
+                        setActionLog(prev => [...prev.slice(-15), { id: Math.random().toString(), msg: `${nick} played ${addedBone.left}-${addedBone.right}`, isYou: playedBy === socket.id, ts: Date.now() }]);
+                    }
+                }
+            }
+            prevBoardRef.current = state.board || [];
+            actionLogTurnRef.current = state.turn;
+
         });
 
         socket.on('roundEnd', (data: any) => setRoundOverData(data));
         socket.on('matchOver', (data: any) => setMatchOverData(data));
         socket.on('moveError', () => { });
 
-        // When a bone is drawn from boneyard
+        // When a bone is drawn from boneyard (Local only)
         socket.on('boneDrawn', (data: any) => {
             setDrawingBone(false);
-            // If drawn bone is not playable, player needs to keep drawing
+            setActionLog(prev => [...prev.slice(-15), { id: Math.random().toString(), msg: `You drew a tile`, isYou: true, ts: Date.now() }]);
+            if (data.canPlayNow) {
+                setDrawPhase(null);
+            }
         });
 
-        // When a player passes (shown to that player)
+        // When a player passes (Local only)
         socket.on('playerPassed', () => {
             setBlockedPopup(true);
+            setDrawPhase(null);
+            setActionLog(prev => [...prev.slice(-15), { id: Math.random().toString(), msg: `You passed`, isYou: true, ts: Date.now() }]);
             setTimeout(() => setBlockedPopup(false), 1200);
         });
 
@@ -127,6 +164,9 @@ export default function Gameplay({ room }: any) {
         socket.on('turnTimerStart', (data: any) => {
             setTimerSeconds(data.secondsLeft);
             setTimerTotal(data.secondsLeft);
+            if (data.turn !== socket?.id) {
+                setDrawPhase(null);
+            }
         });
 
         socket.on('turnTimerTick', (data: any) => {
@@ -134,7 +174,8 @@ export default function Gameplay({ room }: any) {
         });
 
         socket.on('playerAutoAction', (data: any) => {
-            // Another player was auto-passed (timeout or bot pass)
+            const nick = room.players[data.playerId]?.nickname || 'Bot';
+            setActionLog(prev => [...prev.slice(-15), { id: Math.random().toString(), msg: `${nick} passed`, isYou: false, ts: Date.now() }]);
         });
 
         socket.on('emojiReceived', (data: any) => {
@@ -159,19 +200,22 @@ export default function Gameplay({ room }: any) {
             }, 4000); // stickers last a bit longer
         });
 
-        // ── Dealing Phase Events ─────────────────────────────────
-        socket.on('dealPhaseStart', (data: any) => {
-            setDealPhase('dealing');
-            setDealDeck(data.fullDeck);
-            setDealtTiles(new Set());
-            setMisdealRevealData(null);
-            setGameState(null); // clear previous game state during deal
+        // ── Drawing Phase Events ─────────────────────────────────
+        socket.on('drawPhaseStart', (data: any) => {
+            setDrawPhase({ active: true, playerId: data.playerId, countdown: data.duration || 7 });
         });
 
-        socket.on('dealTile', (data: any) => {
-            setDealtTiles(prev => new Set([...prev, data.tileIndex]));
-            setDealingToPlayer(data.toPlayer);
-            setTimeout(() => setDealingToPlayer(null), 150);
+        // ── Dealing Phase Events ─────────────────────────────────
+        socket.on('dealPhaseStart', (data: any) => {
+            misdealShownRef.current = false; // Reset misdeal reporting
+            setDealPhase('dealing');
+            setDealAnimationData({
+                fullDeck: data.fullDeck,
+                dealOrder: data.dealOrder,
+                playerOrder: data.playerOrder,
+            });
+            setMisdealRevealData(null);
+            setGameState(null); // clear previous game state during deal
         });
 
         socket.on('misdealReveal', (data: any) => {
@@ -201,24 +245,53 @@ export default function Gameplay({ room }: any) {
             socket.off('stickerReceived');
             socket.off('availableStickers');
             socket.off('dealPhaseStart');
-            socket.off('dealTile');
             socket.off('misdealReveal');
             socket.off('dealComplete');
+            socket.off('drawPhaseStart');
+            if (drawIntervalRef.current) clearInterval(drawIntervalRef.current);
         };
     }, [socket]);
 
     useEffect(() => {
         if (!socket) return;
-        socket.on('availableStickers', (stickers: any[]) => {
-            setCustomStickers(stickers);
-        });
+        
+        const onStickers = (stickers: any[]) => setCustomStickers(stickers);
+        socket.on('availableStickers', onStickers);
         socket.emit('getAvailableStickers');
+        
+        return () => {
+            socket.off('availableStickers', onStickers);
+        };
     }, [socket]);
+    
+    // Process draw phase logic safely separated from socket subscriptions
+    useEffect(() => {
+        if (drawPhase && drawPhase.countdown > 0) {
+            if (drawIntervalRef.current) clearInterval(drawIntervalRef.current);
+            drawIntervalRef.current = setInterval(() => {
+                setDrawPhase(prev => {
+                    if (!prev || prev.countdown <= 1) {
+                        clearInterval(drawIntervalRef.current);
+                        return { ...prev, countdown: 0, active: prev?.active || false, playerId: prev?.playerId || '' };
+                    }
+                    return { ...prev, countdown: prev.countdown - 1 };
+                });
+            }, 1000);
+        } else if (drawPhase?.countdown === 0) {
+            if (drawIntervalRef.current) {
+                clearInterval(drawIntervalRef.current);
+                drawIntervalRef.current = null;
+            }
+        }
+    }, [drawPhase?.countdown, drawPhase?.playerId]);
 
     // Auto-detect when current player is blocked (no valid moves & deck empty)
     useEffect(() => {
         if (!gameState || !socket) return;
-        if (gameState.turn !== socket.id) return;
+        if (gameState.turn !== socket.id) {
+            autoPassRef.current = false;
+            return;
+        }
 
         const board = gameState.board;
         const hand = gameState.hand;
@@ -235,12 +308,15 @@ export default function Gameplay({ room }: any) {
 
         if (!hasValidMove) {
             if (gameState.deckCount === 0) {
-                // Player is blocked — show popup and auto-pass after delay
-                setBlockedPopup(true);
-                setTimeout(() => {
-                    setBlockedPopup(false);
-                    socket.emit('drawBone', room.id); // this will pass the turn
-                }, 1500);
+                if (!autoPassRef.current) {
+                    autoPassRef.current = true;
+                    // Player is blocked — show popup and auto-pass after delay
+                    setBlockedPopup(true);
+                    setTimeout(() => {
+                        setBlockedPopup(false);
+                        socket.emit('drawBone', room.id); // this will pass the turn
+                    }, 1500);
+                }
             } else {
                 setMustDrawPopup(true);
             }
@@ -391,31 +467,21 @@ export default function Gameplay({ room }: any) {
     // Show dealing overlay during deal phase (before gameState arrives)
     if (dealPhase === 'dealing' || dealPhase === 'misdeal' || dealPhase === 'complete') {
         return (
-            <div className="gameplay-container">
-                <div className="table-wrapper" style={{ background: 'radial-gradient(circle, #111118, #050508)' }}>
+            <div className="gameplay-container" style={{ background: '#22262a' }}>
+                <div className="table-wrapper" style={{ background: 'transparent' }}>
                     {/* Dealing Phase Overlay */}
-                    {dealPhase === 'dealing' && (
-                        <div className="deal-overlay">
-                            <h2 className="deal-title">Dealing Tiles...</h2>
-                            <div className="deal-table-grid">
-                                {dealDeck.map((tile: any, idx: number) => {
-                                    const isTaken = dealtTiles.has(tile.index);
-                                    const isBeingDealt = dealingToPlayer && isTaken;
-                                    return (
-                                        <div
-                                            key={idx}
-                                            className={`deal-tile ${isTaken ? 'deal-tile-taken' : ''} ${isBeingDealt ? 'deal-tile-flash' : ''}`}
-                                        >
-                                            <Domino bone={tile} faceDown skinColor="#1f2937" />
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                            <div className="deal-progress">
-                                <div className="deal-progress-bar" style={{ width: `${(dealtTiles.size / dealDeck.length) * 100}%` }}></div>
-                            </div>
-                            <p className="deal-counter">{dealtTiles.size} / {dealDeck.length} tiles dealt</p>
-                        </div>
+                    {dealPhase === 'dealing' && dealAnimationData && (
+                        <DealingBoard
+                            fullDeck={dealAnimationData.fullDeck}
+                            dealOrder={dealAnimationData.dealOrder}
+                            playerOrder={dealAnimationData.playerOrder}
+                            localPlayerId={socket.id}
+                            onComplete={() => {
+                                if (room?.hostId === socket.id) {
+                                    socket.emit('dealing_animation_complete', room?.id);
+                                }
+                            }}
+                        />
                     )}
 
                     {/* Misdeal Reveal Overlay */}
@@ -460,17 +526,8 @@ export default function Gameplay({ room }: any) {
     const turnPlayerNick = isMyTurn ? 'You' : room.players[gameState.turn]?.nickname || '???';
     const boneyard: any[] = gameState.boneyard || [];
 
-    // Determine if player needs to draw (no valid moves + deck > 0)
-    const needsToDraw = (() => {
-        if (!isMyTurn || gameState.board.length === 0) return false;
-        const leftEnd = gameState.board[0].left;
-        const rightEnd = gameState.board[gameState.board.length - 1].right;
-        const hasValidMove = gameState.hand.some((bone: any) =>
-            bone.left === leftEnd || bone.right === leftEnd ||
-            bone.left === rightEnd || bone.right === rightEnd
-        );
-        return !hasValidMove && gameState.deckCount > 0;
-    })();
+    // Use authoritative server state for draw phases
+    const needsToDraw = drawPhase?.active && drawPhase?.playerId === socket.id;
 
     const seatPositions = ['seat-top', 'seat-left', 'seat-right'];
 
@@ -578,27 +635,31 @@ export default function Gameplay({ room }: any) {
                 </div>
             )}
 
-            {/* Minimal header — no turn text */}
-            <header className="game-header">
-                <Button type="text" danger icon={<LeftOutlined />} onClick={handleLeaveGame} title="Leave Game" />
-                <div className="gh-center-info">
-                    <span className="mode-badge">{room.gameMode}</span>
-                    <span className="deck-pill">🂠 {gameState.deckCount}</span>
-                    <span className="target-pill">
-                        🏆 {room.matchFormat === 'Score' ? room.targetScore : room.matchFormat}
-                    </span>
-                </div>
-                <div className="gh-actions">
-                    {isMyTurn && gameState.deckCount === 0 && (
-                        <Button danger type="primary" shape="round" icon={<StepForwardOutlined />} onClick={() => drawBone()} style={{ fontWeight: 700, padding: '0 24px', height: 44 }}>
-                            Pass Turn
-                        </Button>
-                    )}
-                </div>
-            </header>
+            {/* NEW HUD */}
+            <div className="hud-top-left">
+                <span>Room Code: <span className="rc-highlight">#{room.id.slice(0, 8).toUpperCase()}</span></span>
+                <span>Total Pot: <span className="rc-highlight">{room.matchFormat === 'Score' ? room.targetScore : '0'} Coins</span></span>
+            </div>
 
+            <div className="hud-top-center">
+                <span><i className="fas fa-th-large"></i> {room.gameMode}</span>
+                <span><i className="fas fa-coins"></i> {user?.coins || 0}</span>
+                <span><i className="fas fa-trophy"></i> {room.matchFormat === 'Score' ? room.targetScore : 'Win'}</span>
+            </div>
+
+            {/* ACTION LOG PANEL */}
+            <div className="action-log-panel" ref={(el) => { if (el) el.scrollTop = el.scrollHeight; }}>
+                <span className="action-log-title">Action Log</span>
+                {actionLog.length === 0 && <span className="log-entry recent">Waiting for moves...</span>}
+                {actionLog.map(log => (
+                    <span key={log.id} className={`log-entry ${log.isYou ? 'log-entry-you' : ''}`}>
+                        {log.msg}
+                    </span>
+                ))}
+            </div>
+            
             {/* TABLE with players around */}
-            <div className="table-wrapper" style={{ background: tableSkin.bg || 'radial-gradient(circle, #111118, #050508)' }}>
+            <div className="table-wrapper" style={{ background: 'transparent' }}>
                 {/* Opponent seats */}
                 {opponents.map(([id, count], idx) => {
                     const player = room.players[id];
@@ -610,37 +671,38 @@ export default function Gameplay({ room }: any) {
                     const oppSkinData = player?.equippedSkins?.domino ? ALL_SKINS[player.equippedSkins.domino] : ALL_SKINS['classic'];
                     return (
                         <div key={id} className={`player-seat ${pos} ${isTurn ? 'is-active-turn' : ''}`}>
-                            {activeEmojis[id] && <div className={`emoji-bubble ${id === socket.id ? 'user-bubble' : ''}`}>{activeEmojis[id]}</div>}
-                            {activeStickers[id] && (
-                                <div className={`sticker-bubble ${id === socket.id ? 'user-sticker' : ''}`}>
-                                    <img src={activeStickers[id].url || `/stickers/${activeStickers[id].id}.png`} alt="sticker" />
+                            <div className="seat-indicators">
+                                <div className="signal-bars">
+                                    <div className="signal-bar sb-1"></div>
+                                    <div className="signal-bar sb-2"></div>
+                                    <div className="signal-bar sb-3"></div>
                                 </div>
-                            )}
-                            <div className="seat-avatar-wrap">
-                                {isTurn && timerSeconds > 0 && (
-                                    <svg className="timer-ring" viewBox="0 0 54 54">
-                                        <circle cx="27" cy="27" r="23" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="4" />
-                                        <circle cx="27" cy="27" r="23" fill="none"
-                                            stroke={timerSeconds <= 3 ? 'var(--danger)' : timerSeconds <= 5 ? 'var(--accent)' : 'var(--primary)'}
-                                            strokeWidth="4"
-                                            strokeDasharray={`${(timerSeconds / timerTotal) * 144.5} 144.5`}
-                                            strokeLinecap="round"
-                                            transform="rotate(-90 27 27)"
-                                            style={{ transition: 'stroke-dasharray 0.9s linear' }}
-                                        />
-                                    </svg>
-                                )}
-                                <div className="avatar-circle-main" style={{ background: color }}>
-                                    {player?.nickname?.charAt(0)?.toUpperCase() || '?'}
+                                <div className="status-dot"></div>
+                            </div>
+                            <div className="seat-avatar-wrap" onClick={() => setActivePopover(activePopover === id ? null : id)}>
+                                <div className="avatar-circle-main">
+                                    <i className="fas fa-user" style={{ fontSize: '0.9rem' }}></i>
                                 </div>
                                 {isTurn && timerSeconds > 0 && (
                                     <span className="timer-text-pill">{timerSeconds}s</span>
+                                )}
+                                {activePopover === id && (
+                                    <div className="player-popup-menu" onClick={e => e.stopPropagation()}>
+                                        <div className="pp-name">{player?.nickname}</div>
+                                        <div className="pp-stat">Win Rate: {player?.total_games > 0 ? Math.round((player?.total_wins / player?.total_games) * 100) : 0}%</div>
+                                        {!player?.isBot && (
+                                            <>
+                                                <button className="pp-btn">Add Friend</button>
+                                                <button className="pp-btn">Block</button>
+                                            </>
+                                        )}
+                                    </div>
                                 )}
                             </div>
                             <div className="seat-meta">
                                 <span className="seat-name">{player?.nickname}{player?.isBot ? ' 🤖' : ''}</span>
                                 <span className="seat-detail">
-                                    {room.matchFormat === 'Score' ? `${gameState.scores[id] || 0}pts` : `${roundOverData?.roundWins?.[id] || 0} wins`}
+                                    {count} tiles
                                 </span>
                             </div>
 
@@ -679,49 +741,82 @@ export default function Gameplay({ room }: any) {
                     onPlayRight={handlePlayRight}
                     onDropLeft={handleDropLeft}
                     onDropRight={handleDropRight}
+                    skinBg={tableSkin.bg || '#366841'}
                 />
 
-                {/* You — bottom */}
-                <div className={`player-seat seat-bottom ${isMyTurn ? 'is-active-turn' : ''}`}>
-                    <div className="seat-avatar-wrap">
-                        {isMyTurn && timerSeconds > 0 && (
-                            <svg className="timer-ring" viewBox="0 0 54 54">
-                                <circle cx="27" cy="27" r="23" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="4" />
-                                <circle cx="27" cy="27" r="23" fill="none"
-                                    stroke={timerSeconds <= 3 ? 'var(--danger)' : timerSeconds <= 5 ? 'var(--accent)' : 'var(--primary)'}
-                                    strokeWidth="4"
-                                    strokeDasharray={`${(timerSeconds / timerTotal) * 144.5} 144.5`}
-                                    strokeLinecap="round"
-                                    transform="rotate(-90 27 27)"
-                                    style={{ transition: 'stroke-dasharray 0.9s linear' }}
-                                />
-                            </svg>
-                        )}
-                        <div className="avatar-circle-main" style={{ background: '#6366f1' }}>
-                            {(user?.nickname || 'Y').charAt(0).toUpperCase()}
+                {/* Local Player Area (Avatar + Hand aligned horizontally) */}
+                <div className="bottom-play-area">
+                    {/* You Avatar */}
+                    <div className={`player-seat seat-bottom ${isMyTurn ? 'is-active-turn' : ''}`}>
+                        <div className="seat-indicators">
+                            <div className="signal-bars" style={{ color: '#e8a030' }}>
+                                <div className="signal-bar sb-1" style={{ background: '#e8a030' }}></div>
+                                <div className="signal-bar sb-2" style={{ background: '#e8a030' }}></div>
+                                <div className="signal-bar sb-3" style={{ background: '#e8a030' }}></div>
+                            </div>
+                            <div className="status-dot" style={{ background: '#e8a030' }}></div>
                         </div>
-                        {isMyTurn && timerSeconds > 0 && (
-                            <span className="timer-text-pill">{timerSeconds}s</span>
-                        )}
-                    </div>
-                    <div className="seat-meta">
-                        <span className="seat-name">You</span>
-                        <span className="seat-detail">
-                            {room.matchFormat === 'Score' ? `${gameState.scores[socket.id] || 0}pts` : `${roundOverData?.roundWins?.[socket.id] || 0} wins`}
-                        </span>
-                    </div>
-                    {activeEmojis[socket.id] && (
-                        <div className="emoji-bubble user-bubble">{activeEmojis[socket.id]}</div>
-                    )}
-                    {activeStickers[socket.id] && (
-                        <div className="sticker-bubble user-sticker">
-                            <img src={activeStickers[socket.id].url || `/stickers/${activeStickers[socket.id].id}.png`} alt="sticker" />
+                        <div className="seat-avatar-wrap">
+                            <div className="avatar-circle-main" style={{ color: '#e8a030', borderColor: isMyTurn ? '#e8a030' : 'transparent' }}>
+                                {(user?.nickname || 'Y').charAt(0).toUpperCase()}
+                            </div>
+                            {isMyTurn && !needsToDraw && timerSeconds > 0 && (
+                                <span className="timer-text-pill">{timerSeconds}s</span>
+                            )}
+                            {needsToDraw && drawPhase && (
+                                <span className="timer-text-pill draw-timer-pill" style={{ background: 'var(--danger)' }}>{drawPhase.countdown}s</span>
+                            )}
                         </div>
-                    )}
-                    {isMyTurn && <div className="seat-turn-glow"></div>}
+                        <div className="seat-meta">
+                            <span className="seat-name">You</span>
+                            <span className="seat-detail">
+                                {room.matchFormat === 'Score' ? `${gameState.scores[socket.id] || 0} pts` : `0 pts`}
+                            </span>
+                        </div>
+                        {activeEmojis[socket.id] && (
+                            <div className="emoji-bubble user-bubble">{activeEmojis[socket.id]}</div>
+                        )}
+                        {activeStickers[socket.id] && (
+                            <div className="sticker-bubble user-sticker">
+                                <img src={activeStickers[socket.id].url || `/stickers/${activeStickers[socket.id].id}.png`} alt="sticker" />
+                            </div>
+                        )}
+                        {isMyTurn && <div className="seat-turn-glow"></div>}
+                    </div>
+
+                    {/* Hand */}
+                    <div className="player-area">
+                        <div className={`hand-tray ${isMyTurn ? 'hand-active' : ''}`}>
+                            {gameState.hand.map((bone: any, idx: number) => {
+                                let isPlayable = true;
+                                if (gameState.board.length > 0) {
+                                    const leftEnd = gameState.board[0].left;
+                                    const rightEnd = gameState.board[gameState.board.length - 1].right;
+                                    isPlayable = bone.left === leftEnd || bone.right === leftEnd || bone.left === rightEnd || bone.right === rightEnd;
+                                }
+
+                                const isSelected = selectedBone && selectedBone.left === bone.left && selectedBone.right === bone.right;
+
+                                return (
+                                    <div
+                                        key={idx}
+                                        className={`hand-bone-wrapper ${isMyTurn && isPlayable ? 'draggable' : ''} ${isMyTurn && !isPlayable ? 'unplayable-bone' : ''} ${isSelected ? 'selected' : ''}`}
+                                        draggable={isMyTurn && isPlayable}
+                                        onDragStart={(e) => isMyTurn && isPlayable && handleDragStart(e, bone)}
+                                        onDragEnd={() => setSelectedBone(null)}
+                                    >
+                                        <Domino
+                                            bone={bone}
+                                            isInteractive={isMyTurn && isPlayable}
+                                            onClick={() => handleBoneSelect(bone)}
+                                        />
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
                 </div>
             </div>
-
             {/* Boneyard — Expands to interactive grid when drawing */}
             {boneyard.length > 0 && needsToDraw && (
                 <div className={`boneyard-section boneyard-expanded`}>
@@ -743,38 +838,6 @@ export default function Gameplay({ room }: any) {
                     </div>
                 </div>
             )}
-
-            {/* Hand */}
-            <div className="player-area">
-                <div className={`hand-tray ${isMyTurn ? 'hand-active' : ''}`}>
-                    {gameState.hand.map((bone: any, idx: number) => {
-                        let isPlayable = true;
-                        if (gameState.board.length > 0) {
-                            const leftEnd = gameState.board[0].left;
-                            const rightEnd = gameState.board[gameState.board.length - 1].right;
-                            isPlayable = bone.left === leftEnd || bone.right === leftEnd || bone.left === rightEnd || bone.right === rightEnd;
-                        }
-
-                        const isSelected = selectedBone && selectedBone.left === bone.left && selectedBone.right === bone.right;
-
-                        return (
-                            <div
-                                key={idx}
-                                className={`hand-bone-wrapper ${isMyTurn && isPlayable ? 'draggable' : ''} ${isMyTurn && !isPlayable ? 'unplayable-bone' : ''} ${isSelected ? 'selected' : ''}`}
-                                draggable={isMyTurn && isPlayable}
-                                onDragStart={(e) => isMyTurn && isPlayable && handleDragStart(e, bone)}
-                                onDragEnd={() => setSelectedBone(null)}
-                            >
-                                <Domino
-                                    bone={bone}
-                                    isInteractive={isMyTurn && isPlayable}
-                                    onClick={() => handleBoneSelect(bone)}
-                                />
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
 
             {/* Quick Chat Menu */}
             <div className="quick-chat-container">

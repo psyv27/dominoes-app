@@ -138,6 +138,70 @@ BEGIN
         CONSTRAINT FK_PlayerGameStats_Player FOREIGN KEY (player_id) REFERENCES dbo.Users(id)
     );
 END;
+
+IF OBJECT_ID(N'dbo.StoreItems', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.StoreItems (
+        id UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_StoreItems PRIMARY KEY DEFAULT NEWID(),
+        name NVARCHAR(255) NOT NULL,
+        type NVARCHAR(50) NOT NULL, -- e.g. 'domino_skin', 'table', 'chat_color'
+        price INT NOT NULL CONSTRAINT DF_StoreItems_Price DEFAULT 0,
+        discount_percentage INT NOT NULL CONSTRAINT DF_StoreItems_Discount DEFAULT 0,
+        is_limited BIT NOT NULL CONSTRAINT DF_StoreItems_IsLimited DEFAULT 0,
+        is_new BIT NOT NULL CONSTRAINT DF_StoreItems_IsNew DEFAULT 0,
+        is_popular BIT NOT NULL CONSTRAINT DF_StoreItems_IsPopular DEFAULT 0,
+        image_url NVARCHAR(2048) NULL,
+        created_at DATETIME2 NOT NULL CONSTRAINT DF_StoreItems_CreatedAt DEFAULT GETDATE()
+    );
+END;
+
+IF OBJECT_ID(N'dbo.UserInventory', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.UserInventory (
+        id UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_UserInventory PRIMARY KEY DEFAULT NEWID(),
+        user_id UNIQUEIDENTIFIER NOT NULL,
+        store_item_id UNIQUEIDENTIFIER NOT NULL,
+        acquired_at DATETIME2 NOT NULL CONSTRAINT DF_UserInventory_AcquiredAt DEFAULT GETDATE(),
+        CONSTRAINT FK_UserInventory_User FOREIGN KEY (user_id) REFERENCES dbo.Users(id),
+        CONSTRAINT FK_UserInventory_StoreItem FOREIGN KEY (store_item_id) REFERENCES dbo.StoreItems(id),
+        CONSTRAINT UQ_UserInventory_UserItem UNIQUE (user_id, store_item_id)
+    );
+END;
+
+IF OBJECT_ID(N'dbo.Tournaments', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.Tournaments (
+        id UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_Tournaments PRIMARY KEY DEFAULT NEWID(),
+        title NVARCHAR(255) NOT NULL,
+        description NVARCHAR(1024) NULL,
+        entry_fee INT NOT NULL CONSTRAINT DF_Tournaments_EntryFee DEFAULT 0,
+        prize_pool INT NOT NULL CONSTRAINT DF_Tournaments_PrizePool DEFAULT 0,
+        start_time DATETIME2 NOT NULL,
+        max_players INT NOT NULL CONSTRAINT DF_Tournaments_MaxPlayers DEFAULT 16,
+        status NVARCHAR(50) NOT NULL CONSTRAINT DF_Tournaments_Status DEFAULT 'upcoming', -- upcoming, active, completed, cancelled
+        created_at DATETIME2 NOT NULL CONSTRAINT DF_Tournaments_CreatedAt DEFAULT GETDATE()
+    );
+END;
+
+IF COL_LENGTH('dbo.Tournaments', 'image_url') IS NULL
+BEGIN
+    ALTER TABLE dbo.Tournaments ADD image_url NVARCHAR(2048) NULL;
+END;
+
+IF OBJECT_ID(N'dbo.TournamentParticipants', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.TournamentParticipants (
+        id UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_TournamentParticipants PRIMARY KEY DEFAULT NEWID(),
+        tournament_id UNIQUEIDENTIFIER NOT NULL,
+        user_id UNIQUEIDENTIFIER NOT NULL,
+        joined_at DATETIME2 NOT NULL CONSTRAINT DF_TournamentParticipants_JoinedAt DEFAULT GETDATE(),
+        eliminated BIT NOT NULL CONSTRAINT DF_TournamentParticipants_Eliminated DEFAULT 0,
+        final_rank INT NULL,
+        CONSTRAINT FK_TournamentParticipants_Tournament FOREIGN KEY (tournament_id) REFERENCES dbo.Tournaments(id),
+        CONSTRAINT FK_TournamentParticipants_User FOREIGN KEY (user_id) REFERENCES dbo.Users(id),
+        CONSTRAINT UQ_TournamentParticipants_UserTournament UNIQUE (tournament_id, user_id)
+    );
+END;
 `;
 
 async function initDB() {

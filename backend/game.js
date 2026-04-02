@@ -87,9 +87,17 @@ class DominoGame {
     removePlayer(socketId) {
         delete this.players[socketId];
         delete this.passTracking[socketId];
+
+        let nextPlayer = null;
+        if (this.turn === socketId && this.playerOrder.length > 1) {
+            nextPlayer = this._turnMgr.nextTurn(this.turn, this.playerOrder);
+            if (nextPlayer === socketId) nextPlayer = null;
+        }
+
         this.playerOrder = this.playerOrder.filter(id => id !== socketId);
-        if (this.turn === socketId) {
-            this.nextTurn();
+
+        if (nextPlayer) {
+            this.turn = nextPlayer;
         }
     }
 
@@ -398,6 +406,7 @@ class DominoGame {
                 return this._buildWinResult(socketId, pointsEarnedThisTurn, 'domino');
             }
 
+            this.lastPlayerToMove = socketId;
             this.nextTurn();
             return { success: true, pointsEarnedThisTurn };
         }
@@ -451,8 +460,8 @@ class DominoGame {
         const validMoves = this.getValidMoves(this.players[socketId].hand);
         if (validMoves.length > 0) return { error: 'You have valid moves, cannot draw' };
 
-        // Boneyard empty → pass
-        if (this.deck.length === 0) {
+        // Block mode or Boneyard empty -> pass without drawing
+        if (this.gameMode === 'Block' || this.deck.length === 0) {
             const openEnds = this.getOpenEnds();
             this._turnMgr.recordPass(socketId, openEnds);
             if (!this.passTracking[socketId]) this.passTracking[socketId] = [];

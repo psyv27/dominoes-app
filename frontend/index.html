@@ -1,10 +1,132 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Domino World</title>
+    <title>The Grandmaster's Lounge</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "surface-variant": "#31353f",
+              "primary-fixed": "#ffdea8",
+              "surface-container-high": "#262a34",
+              "on-background": "#dfe2ef",
+              "outline-variant": "#514532",
+              "on-secondary": "#412d00",
+              "primary-fixed-dim": "#ffba20",
+              "inverse-on-surface": "#2c303a",
+              "primary": "#ffdca1",
+              "surface-tint": "#ffba20",
+              "on-primary-fixed": "#271900",
+              "surface-bright": "#353943",
+              "tertiary-fixed-dim": "#17d8ff",
+              "on-tertiary-container": "#005a6b",
+              "surface-container-low": "#181b25",
+              "secondary": "#e8c17c",
+              "on-secondary-container": "#d5b06d",
+              "on-primary-fixed-variant": "#5e4200",
+              "background": "#0f131c",
+              "on-tertiary-fixed": "#001f27",
+              "on-secondary-fixed": "#271900",
+              "surface-container-highest": "#31353f",
+              "tertiary": "#abebff",
+              "on-primary-container": "#6b4c00",
+              "surface": "#0f131c",
+              "on-surface": "#dfe2ef",
+              "tertiary-container": "#00d7fe",
+              "error-container": "#93000a",
+              "surface-dim": "#0f131c",
+              "on-primary": "#412d00",
+              "on-secondary-fixed-variant": "#5d4208",
+              "on-tertiary": "#003641",
+              "outline": "#9e8f78",
+              "secondary-fixed": "#ffdea8",
+              "inverse-surface": "#dfe2ef",
+              "surface-container": "#1c1f29",
+              "on-tertiary-fixed-variant": "#004e5d",
+              "secondary-container": "#5d4208",
+              "primary-container": "#ffb800",
+              "inverse-primary": "#7c5800",
+              "surface-container-lowest": "#0a0e17",
+              "on-error-container": "#ffdad6",
+              "on-surface-variant": "#d5c4ab",
+              "error": "#ffb4ab",
+              "on-error": "#690005",
+              "admin-on-error": "#690005",
+              "admin-outline-variant": "#464554",
+              "admin-inverse-primary": "#494bd6",
+              "admin-surface-dim": "#0c1324",
+              "admin-on-background": "#dce1fb",
+              "admin-secondary-container": "#e4ae00",
+              "admin-on-primary-fixed": "#07006c",
+              "admin-outline": "#908fa0",
+              "admin-on-primary": "#1000a9",
+              "admin-on-secondary": "#3f2e00",
+              "admin-surface-container": "#191f31",
+              "admin-inverse-surface": "#dce1fb",
+              "admin-primary-container": "#8083ff",
+              "admin-inverse-on-surface": "#2a3043",
+              "admin-on-surface-variant": "#c7c4d7",
+              "admin-surface": "#0c1324",
+              "admin-surface-container-highest": "#2e3447",
+              "admin-error-container": "#93000a",
+              "admin-surface-container-lowest": "#070d1f",
+              "admin-surface-container-high": "#23293c",
+              "admin-on-tertiary-container": "#5c0008",
+              "admin-on-tertiary-fixed-variant": "#930013",
+              "admin-primary-fixed-dim": "#c0c1ff",
+              "admin-surface-bright": "#33394c",
+              "admin-primary": "#c0c1ff",
+              "admin-secondary-fixed": "#ffdf9a",
+              "admin-on-error-container": "#ffdad6",
+              "admin-on-secondary-container": "#5b4400",
+              "admin-background": "#0c1324",
+              "admin-surface-container-low": "#151b2d",
+              "admin-secondary-fixed-dim": "#f7be1d",
+              "admin-on-secondary-fixed": "#251a00",
+              "admin-tertiary": "#ffb3ad",
+              "admin-on-primary-fixed-variant": "#2f2ebe",
+              "admin-tertiary-fixed-dim": "#ffb3ad",
+              "admin-primary-fixed": "#e1e0ff",
+              "admin-surface-tint": "#c0c1ff",
+              "admin-on-tertiary": "#68000a",
+              "admin-on-surface": "#dce1fb",
+              "admin-surface-variant": "#2e3447",
+              "admin-tertiary-fixed": "#ffdad7",
+              "admin-on-secondary-fixed-variant": "#5a4300",
+              "admin-on-primary-container": "#0d0096",
+              "admin-secondary": "#ffca45",
+              "admin-on-tertiary-fixed": "#410004",
+              "admin-tertiary-container": "#ff5451",
+              "admin-error": "#ffb4ab",
+              "tertiary-fixed": "#b0ecff",
+              "secondary-fixed-dim": "#e8c17c"
+            },
+            fontFamily: {
+              "headline": ["Space Grotesk"],
+              "body": ["Manrope"],
+              "label": ["Manrope"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+    <style>
+      .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+      body {
+        background-color: #0a0e17;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

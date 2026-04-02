@@ -59,7 +59,7 @@ class ScoreCalculator {
     calculateWinnerScore(winnerId, players, playerOrder, teamMode) {
         let score = 0;
 
-        if (teamMode === '2v2' && playerOrder.length === 4) {
+        if ((teamMode === '2v2' || teamMode === 'Team Mode (2 vs 2)') && playerOrder.length === 4) {
             const winnerIndex = playerOrder.indexOf(winnerId);
             // Opponents sit at +1 and +3 positions
             const oppIndices = [(winnerIndex + 1) % 4, (winnerIndex + 3) % 4];
@@ -112,7 +112,7 @@ class ScoreCalculator {
         let blockedWinner = null;
         let winningTeam = null;
 
-        if (teamMode === '2v2' && playerOrder.length === 4) {
+        if ((teamMode === '2v2' || teamMode === 'Team Mode (2 vs 2)') && playerOrder.length === 4) {
             const team1Total = totals[playerOrder[0]] + totals[playerOrder[2]];
             const team2Total = totals[playerOrder[1]] + totals[playerOrder[3]];
 
