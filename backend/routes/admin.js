@@ -164,4 +164,51 @@ router.delete('/stickers/:id', (req, res) => {
     res.json({ success: true });
 });
 
+// ── STORE MANAGEMENT ──
+
+// ADMIN: Add store item
+router.post('/store', async (req, res) => {
+    const { name, type, price, discount_percentage, is_limited, is_new, is_popular, image_url } = req.body;
+    try {
+        const result = await db.query(
+            `INSERT INTO StoreItems (name, type, price, discount_percentage, is_limited, is_new, is_popular, image_url) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+            [name, type, price || 0, discount_percentage || 0, is_limited ? 1 : 0, is_new ? 1 : 0, is_popular ? 1 : 0, image_url]
+        );
+        res.json({ success: true, item: result.rows[0] });
+    } catch (err) {
+        console.error('Store item insert error:', err);
+        res.status(500).json({ error: 'Failed to add store item' });
+    }
+});
+
+// ADMIN: Edit store item
+router.put('/store/:id', async (req, res) => {
+    const { name, type, price, discount_percentage, is_limited, is_new, is_popular, image_url } = req.body;
+    try {
+        const result = await db.query(
+            `UPDATE StoreItems 
+             SET name = $1, type = $2, price = $3, discount_percentage = $4, is_limited = $5, is_new = $6, is_popular = $7, image_url = $8 
+             WHERE id = $9 RETURNING *`,
+            [name, type, price, discount_percentage, is_limited ? 1 : 0, is_new ? 1 : 0, is_popular ? 1 : 0, image_url, req.params.id]
+        );
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Item not found' });
+        res.json({ success: true, item: result.rows[0] });
+    } catch (err) {
+        console.error('Store item update error:', err);
+        res.status(500).json({ error: 'Failed to update store item' });
+    }
+});
+
+// ADMIN: Delete store item
+router.delete('/store/:id', async (req, res) => {
+    try {
+        await db.query('DELETE FROM StoreItems WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Store item delete error:', err);
+        res.status(500).json({ error: 'Failed to delete store item' });
+    }
+});
+
 module.exports = router;

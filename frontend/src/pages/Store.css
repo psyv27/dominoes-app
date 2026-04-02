@@ -3,3 +3,6 @@
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
 }
+.liquid-gold-gradient {
+    background: linear-gradient(135deg, #ffb800 0%, #ffdca1 100%);
+}

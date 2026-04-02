@@ -16,8 +16,17 @@ export default function Admin() {
     const [newStickerHidden, setNewStickerHidden] = useState(false);
     const [editingStickerId, setEditingStickerId] = useState<string | null>(null);
     const [editAllowedUsers, setEditAllowedUsers] = useState('');
+
+    const [storeItems, setStoreItems] = useState<any[]>([]);
+    const [newStoreItem, setNewStoreItem] = useState({
+        name: '', desc: '', price: 1000, priceType: 'coins', type: 'domino', image: '', discount: 0, isLimited: false, isHot: false, isNew: true
+    });
+
+    const [tournaments, setTournaments] = useState<any[]>([]);
+    const [newTournament, setNewTournament] = useState({ title: '', image_url: '', entry_fee: 500 });
     
     const API_URL = 'http://localhost:5001/admin';
+    const TOURNAMENT_URL = 'http://localhost:5001/tournaments';
 
     useEffect(() => {
         loadData();
@@ -41,9 +50,67 @@ export default function Admin() {
                 const res = await fetch(`${API_URL}/stickers`);
                 const data = await res.json();
                 setStickers(data);
+            } else if (activeTab === 'store') {
+                const res = await fetch('http://localhost:5001/store/items');
+                const data = await res.json();
+                setStoreItems(data);
+            } else if (activeTab === 'tournaments') {
+                const res = await fetch(`${TOURNAMENT_URL}/all`);
+                const data = await res.json();
+                setTournaments(data);
             }
         } catch (err) {
             console.error('Failed to load admin data', err);
+        }
+    };
+
+    const addStoreItem = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            await fetch(`${API_URL}/store`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...newStoreItem, image_url: newStoreItem.image, is_limited: newStoreItem.isLimited, is_new: newStoreItem.isNew, is_popular: newStoreItem.isHot, discount_percentage: newStoreItem.discount })
+            });
+            setNewStoreItem({ name: '', desc: '', price: 1000, priceType: 'coins', type: 'domino', image: '', discount: 0, isLimited: false, isHot: false, isNew: true });
+            loadData();
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const deleteStoreItem = async (id: string) => {
+        if (!confirm('Delete this store item?')) return;
+        try {
+            await fetch(`${API_URL}/store/${id}`, { method: 'DELETE' });
+            loadData();
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const addTournament = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            await fetch(TOURNAMENT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newTournament)
+            });
+            setNewTournament({ title: '', image_url: '', entry_fee: 500 });
+            loadData();
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const deleteTournament = async (id: string) => {
+        if (!confirm('Delete this tournament?')) return;
+        try {
+            await fetch(`${TOURNAMENT_URL}/${id}`, { method: 'DELETE' });
+            loadData();
+        } catch (err) {
+            console.error(err);
         }
     };
 
@@ -230,6 +297,16 @@ export default function Admin() {
                         <button onClick={() => setActiveTab('stickers')} className={`flex items-center gap-3 px-4 py-3 rounded-xl hover:translate-x-1 transition-all duration-200 cursor-pointer active:scale-95 ${activeTab === 'stickers' ? 'bg-slate-800/60 text-[#c0c1ff] border-l-2 border-[#c0c1ff]' : 'text-slate-400 hover:bg-slate-800/30'}`}>
                             <span className="material-symbols-outlined" style={activeTab === 'stickers' ? {fontVariationSettings: "'FILL' 1"} : {}}>mood</span>
                             <span className="text-sm font-medium font-body">Custom Stickers</span>
+                        </button>
+
+                        <button onClick={() => setActiveTab('store')} className={`flex items-center gap-3 px-4 py-3 rounded-xl hover:translate-x-1 transition-all duration-200 cursor-pointer active:scale-95 ${activeTab === 'store' ? 'bg-slate-800/60 text-[#c0c1ff] border-l-2 border-[#c0c1ff]' : 'text-slate-400 hover:bg-slate-800/30'}`}>
+                            <span className="material-symbols-outlined" style={activeTab === 'store' ? {fontVariationSettings: "'FILL' 1"} : {}}>storefront</span>
+                            <span className="text-sm font-medium font-body">Store Management</span>
+                        </button>
+
+                        <button onClick={() => setActiveTab('tournaments')} className={`flex items-center gap-3 px-4 py-3 rounded-xl hover:translate-x-1 transition-all duration-200 cursor-pointer active:scale-95 ${activeTab === 'tournaments' ? 'bg-slate-800/60 text-[#c0c1ff] border-l-2 border-[#c0c1ff]' : 'text-slate-400 hover:bg-slate-800/30'}`}>
+                            <span className="material-symbols-outlined" style={activeTab === 'tournaments' ? {fontVariationSettings: "'FILL' 1"} : {}}>emoji_events</span>
+                            <span className="text-sm font-medium font-body">Tournaments</span>
                         </button>
                     </nav>
                     
@@ -651,6 +728,234 @@ export default function Admin() {
                                                 <tr>
                                                     <td colSpan={5} className="px-6 py-12 text-center text-admin-outline">No custom stickers uploaded.</td>
                                                 </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </section>
+                        </div>
+                    )}
+
+                    {/* STORE TAB */}
+                    {activeTab === 'store' && (
+                        <div className="max-w-6xl mx-auto space-y-12 pb-12">
+                            <section className="space-y-2">
+                                <h1 className="text-4xl font-bold font-headline tracking-tighter text-admin-on-surface">Store Management</h1>
+                                <p className="text-admin-on-surface-variant font-body max-w-2xl">Manage the shop catalog, set prices, and configure special badges for items.</p>
+                            </section>
+
+                            <section className="bg-admin-surface-container-highest/40 backdrop-blur-md rounded-2xl p-8 border border-admin-outline-variant/15 shadow-xl">
+                                <div className="flex items-center gap-4 mb-8">
+                                    <div className="p-3 bg-admin-primary/10 rounded-xl">
+                                        <span className="material-symbols-outlined text-admin-primary">storefront</span>
+                                    </div>
+                                    <div>
+                                        <h3 className="text-lg font-semibold font-headline">Add Store Item</h3>
+                                    </div>
+                                </div>
+                                <form onSubmit={addStoreItem} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-end">
+                                    {/* Name */}
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-semibold text-admin-on-surface-variant uppercase tracking-wider font-label">Item Name</label>
+                                        <input 
+                                            type="text" required
+                                            value={newStoreItem.name} onChange={e => setNewStoreItem({...newStoreItem, name: e.target.value})}
+                                            className="w-full bg-admin-surface-container-high border-none rounded-xl px-4 py-3 text-admin-on-surface placeholder:text-admin-outline focus:ring-1 focus:ring-admin-primary transition-all font-body" 
+                                        />
+                                    </div>
+                                    {/* Image URL */}
+                                    <div className="space-y-2 lg:col-span-2">
+                                        <label className="text-xs font-semibold text-admin-on-surface-variant uppercase tracking-wider font-label">Image URL</label>
+                                        <input 
+                                            type="text" required
+                                            value={newStoreItem.image} onChange={e => setNewStoreItem({...newStoreItem, image: e.target.value})}
+                                            className="w-full bg-admin-surface-container-high border-none rounded-xl px-4 py-3 text-admin-on-surface placeholder:text-admin-outline focus:ring-1 focus:ring-admin-primary transition-all font-body" 
+                                        />
+                                    </div>
+                                    {/* Description */}
+                                    <div className="space-y-2 lg:col-span-3">
+                                        <label className="text-xs font-semibold text-admin-on-surface-variant uppercase tracking-wider font-label">Description</label>
+                                        <input 
+                                            type="text" required
+                                            value={newStoreItem.desc} onChange={e => setNewStoreItem({...newStoreItem, desc: e.target.value})}
+                                            className="w-full bg-admin-surface-container-high border-none rounded-xl px-4 py-3 text-admin-on-surface placeholder:text-admin-outline focus:ring-1 focus:ring-admin-primary transition-all font-body" 
+                                        />
+                                    </div>
+                                    {/* Price */}
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-semibold text-admin-on-surface-variant uppercase tracking-wider font-label">Price</label>
+                                        <input 
+                                            type="number" required
+                                            value={newStoreItem.price} onChange={e => setNewStoreItem({...newStoreItem, price: Number(e.target.value)})}
+                                            className="w-full bg-admin-surface-container-high border-none rounded-xl px-4 py-3 text-admin-on-surface placeholder:text-admin-outline focus:ring-1 focus:ring-admin-primary transition-all font-body" 
+                                        />
+                                    </div>
+                                    {/* Discount */}
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-semibold text-admin-on-surface-variant uppercase tracking-wider font-label">Discount %</label>
+                                        <input 
+                                            type="number" min="0" max="100"
+                                            value={newStoreItem.discount} onChange={e => setNewStoreItem({...newStoreItem, discount: Number(e.target.value)})}
+                                            className="w-full bg-admin-surface-container-high border-none rounded-xl px-4 py-3 text-admin-on-surface placeholder:text-admin-outline focus:ring-1 focus:ring-admin-primary transition-all font-body" 
+                                        />
+                                    </div>
+                                    {/* Type */}
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-semibold text-admin-on-surface-variant uppercase tracking-wider font-label">Type</label>
+                                        <select 
+                                            value={newStoreItem.type} onChange={e => setNewStoreItem({...newStoreItem, type: e.target.value})}
+                                            className="w-full bg-admin-surface-container-high border-none rounded-xl px-4 py-3 text-admin-on-surface focus:ring-1 focus:ring-admin-primary transition-all font-body"
+                                        >
+                                            <option value="domino">Domino Skin</option>
+                                            <option value="table">Table Theme</option>
+                                            <option value="coins">Coin Pack</option>
+                                            <option value="emotes">Emotes</option>
+                                        </select>
+                                    </div>
+                                    
+                                    {/* Toggles */}
+                                    <div className="flex gap-4 lg:col-span-2">
+                                        <label className="flex items-center gap-2 cursor-pointer bg-admin-surface-container-highest px-4 py-2 rounded-xl">
+                                            <input type="checkbox" checked={newStoreItem.isLimited} onChange={e => setNewStoreItem({...newStoreItem, isLimited: e.target.checked})} className="accent-admin-primary" />
+                                            <span className="text-sm">Limited Edition</span>
+                                        </label>
+                                        <label className="flex items-center gap-2 cursor-pointer bg-admin-surface-container-highest px-4 py-2 rounded-xl">
+                                            <input type="checkbox" checked={newStoreItem.isHot} onChange={e => setNewStoreItem({...newStoreItem, isHot: e.target.checked})} className="accent-admin-primary" />
+                                            <span className="text-sm">Hot / Popular</span>
+                                        </label>
+                                        <label className="flex items-center gap-2 cursor-pointer bg-admin-surface-container-highest px-4 py-2 rounded-xl">
+                                            <input type="checkbox" checked={newStoreItem.isNew} onChange={e => setNewStoreItem({...newStoreItem, isNew: e.target.checked})} className="accent-admin-primary" />
+                                            <span className="text-sm">New</span>
+                                        </label>
+                                    </div>
+                                    
+                                    <button type="submit" disabled={!newStoreItem.name || !newStoreItem.price} className={`h-[52px] w-full rounded-xl font-bold font-label flex items-center justify-center gap-2 transition-all ${!newStoreItem.name ? 'bg-admin-primary/20 text-admin-on-primary-fixed/50 cursor-not-allowed opacity-50' : 'bg-admin-primary text-admin-on-primary hover:opacity-90 active:scale-95'}`}>
+                                        <span className="material-symbols-outlined">add_circle</span>
+                                        Add Item
+                                    </button>
+                                </form>
+                            </section>
+
+                            <section className="space-y-4">
+                                <h3 className="text-xl font-semibold font-headline">Store Catalog</h3>
+                                <div className="bg-admin-surface-container-low rounded-2xl overflow-hidden shadow-lg border border-admin-outline-variant/5">
+                                    <table className="w-full text-left border-collapse">
+                                        <thead>
+                                            <tr className="bg-admin-surface-container-high/40 text-admin-on-surface-variant/60 border-b border-admin-outline-variant/10">
+                                                <th className="px-6 py-4 text-xs font-bold uppercase">Image</th>
+                                                <th className="px-6 py-4 text-xs font-bold uppercase">Name</th>
+                                                <th className="px-6 py-4 text-xs font-bold uppercase">Type</th>
+                                                <th className="px-6 py-4 text-xs font-bold uppercase">Price</th>
+                                                <th className="px-6 py-4 text-xs font-bold uppercase text-right">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-admin-outline-variant/5">
+                                            {storeItems.map(item => (
+                                                <tr key={item.id} className="hover:bg-admin-surface-container-highest transition-all">
+                                                    <td className="px-6 py-4"><img src={item.image_url || item.image} alt={item.name} className="w-10 h-10 object-cover rounded-lg bg-surface-container-low" /></td>
+                                                    <td className="px-6 py-4 font-semibold">{item.name}</td>
+                                                    <td className="px-6 py-4 uppercase text-xs tracking-widest text-admin-primary">{item.type}</td>
+                                                    <td className="px-6 py-4 font-mono font-bold">{item.price} {item.priceType === 'usd' ? 'USD' : 'Coins'}</td>
+                                                    <td className="px-6 py-4 text-right">
+                                                        <button onClick={() => deleteStoreItem(item.id)} className="w-8 h-8 flex items-center justify-center rounded-lg text-admin-tertiary hover:bg-admin-tertiary/10 transition-colors inline-flex">
+                                                            <span className="material-symbols-outlined text-sm">delete</span>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {storeItems.length === 0 && (
+                                                <tr><td colSpan={5} className="text-center py-8 text-admin-outline-variant">No items in store.</td></tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </section>
+                        </div>
+                    )}
+
+                    {/* TOURNAMENTS TAB */}
+                    {activeTab === 'tournaments' && (
+                        <div className="max-w-6xl mx-auto space-y-12 pb-12">
+                            <section className="space-y-2">
+                                <h1 className="text-4xl font-bold font-headline tracking-tighter text-admin-on-surface">Tournament Management</h1>
+                                <p className="text-admin-on-surface-variant font-body max-w-2xl">Create and manage competitive tournaments for the domino community.</p>
+                            </section>
+
+                            <section className="bg-admin-surface-container-highest/40 backdrop-blur-md rounded-2xl p-8 border border-admin-outline-variant/15 shadow-xl">
+                                <div className="flex items-center gap-4 mb-8">
+                                    <div className="p-3 bg-admin-primary/10 rounded-xl">
+                                        <span className="material-symbols-outlined text-admin-primary">emoji_events</span>
+                                    </div>
+                                    <div>
+                                        <h3 className="text-lg font-semibold font-headline">Create Tournament</h3>
+                                        <p className="text-xs text-admin-on-surface-variant font-label">Set a title, banner image, and entry fee for new events.</p>
+                                    </div>
+                                </div>
+                                <form onSubmit={addTournament} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-end">
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-semibold text-admin-on-surface-variant uppercase tracking-wider font-label">Tournament Title</label>
+                                        <input 
+                                            type="text" required placeholder="e.g. Grand Slam Championship"
+                                            value={newTournament.title} onChange={e => setNewTournament({...newTournament, title: e.target.value})}
+                                            className="w-full bg-admin-surface-container-high border-none rounded-xl px-4 py-3 text-admin-on-surface placeholder:text-admin-outline focus:ring-1 focus:ring-admin-primary transition-all font-body" 
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-semibold text-admin-on-surface-variant uppercase tracking-wider font-label">Banner Image URL</label>
+                                        <input 
+                                            type="text" placeholder="https://..."
+                                            value={newTournament.image_url} onChange={e => setNewTournament({...newTournament, image_url: e.target.value})}
+                                            className="w-full bg-admin-surface-container-high border-none rounded-xl px-4 py-3 text-admin-on-surface placeholder:text-admin-outline focus:ring-1 focus:ring-admin-primary transition-all font-body" 
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-semibold text-admin-on-surface-variant uppercase tracking-wider font-label">Entry Fee (Coins)</label>
+                                        <input 
+                                            type="number" min="0" required
+                                            value={newTournament.entry_fee} onChange={e => setNewTournament({...newTournament, entry_fee: Number(e.target.value)})}
+                                            className="w-full bg-admin-surface-container-high border-none rounded-xl px-4 py-3 text-admin-on-surface placeholder:text-admin-outline focus:ring-1 focus:ring-admin-primary transition-all font-body" 
+                                        />
+                                    </div>
+                                    <button type="submit" disabled={!newTournament.title} className={`h-[52px] w-full rounded-xl font-bold font-label flex items-center justify-center gap-2 transition-all lg:col-span-3 ${!newTournament.title ? 'bg-admin-primary/20 text-admin-on-primary-fixed/50 cursor-not-allowed opacity-50' : 'bg-admin-primary text-admin-on-primary hover:opacity-90 active:scale-95'}`}>
+                                        <span className="material-symbols-outlined">add_circle</span>
+                                        Create Tournament
+                                    </button>
+                                </form>
+                            </section>
+
+                            <section className="space-y-4">
+                                <h3 className="text-xl font-semibold font-headline">All Tournaments</h3>
+                                <div className="bg-admin-surface-container-low rounded-2xl overflow-hidden shadow-lg border border-admin-outline-variant/5">
+                                    <table className="w-full text-left border-collapse">
+                                        <thead>
+                                            <tr className="bg-admin-surface-container-high/40 text-admin-on-surface-variant/60 border-b border-admin-outline-variant/10">
+                                                <th className="px-6 py-4 text-xs font-bold uppercase">Banner</th>
+                                                <th className="px-6 py-4 text-xs font-bold uppercase">Title</th>
+                                                <th className="px-6 py-4 text-xs font-bold uppercase">Entry Fee</th>
+                                                <th className="px-6 py-4 text-xs font-bold uppercase">Status</th>
+                                                <th className="px-6 py-4 text-xs font-bold uppercase text-right">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-admin-outline-variant/5">
+                                            {tournaments.map(t => (
+                                                <tr key={t.id} className="hover:bg-admin-surface-container-highest transition-all">
+                                                    <td className="px-6 py-4">
+                                                        {t.image_url ? <img src={t.image_url} alt={t.title} className="w-16 h-10 object-cover rounded-lg" /> : <div className="w-16 h-10 rounded-lg bg-admin-surface-container-highest flex items-center justify-center"><span className="material-symbols-outlined text-admin-outline text-sm">image</span></div>}
+                                                    </td>
+                                                    <td className="px-6 py-4 font-semibold">{t.title}</td>
+                                                    <td className="px-6 py-4 font-mono font-bold">{t.entry_fee} Coins</td>
+                                                    <td className="px-6 py-4">
+                                                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${t.status === 'upcoming' ? 'bg-admin-primary/10 text-admin-primary border border-admin-primary/20' : t.status === 'live' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-admin-outline/10 text-admin-outline border border-admin-outline/20'}`}>{t.status || 'upcoming'}</span>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-right">
+                                                        <button onClick={() => deleteTournament(t.id)} className="w-8 h-8 flex items-center justify-center rounded-lg text-admin-tertiary hover:bg-admin-tertiary/10 transition-colors inline-flex">
+                                                            <span className="material-symbols-outlined text-sm">delete</span>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {tournaments.length === 0 && (
+                                                <tr><td colSpan={5} className="text-center py-8 text-admin-outline-variant">No tournaments created yet.</td></tr>
                                             )}
                                         </tbody>
                                     </table>

@@ -107,7 +107,7 @@ export default function Friends() {
 
     const onlineFriends = friends.filter(f => f.isOnline);
     const offlineFriends = friends.filter(f => !f.isOnline);
-    const displayedFriends = activeTab === 'online' ? onlineFriends : activeTab === 'offline' ? offlineFriends : friends;
+    const displayedFriends = activeTab === 'online' ? onlineFriends : activeTab === 'offline' ? offlineFriends : activeTab === 'blocked' ? [] : friends;
 
     return (
         <DashboardLayout activePage="Social">
@@ -191,10 +191,11 @@ export default function Friends() {
                     <section className="col-span-12 lg:col-span-8 order-2 lg:order-1">
                         {/* Tabs + Search */}
                         <div className="flex items-end justify-between mb-8 flex-wrap gap-4">
-                            <div className="flex gap-8">
+                            <div className="flex gap-6 flex-wrap">
                                 <button onClick={() => setActiveTab('all')} className={`pb-2 font-bold ${activeTab === 'all' ? 'border-b-2 border-primary text-primary' : 'text-on-surface-variant/50 hover:text-on-surface/70'} transition-all`}>ALL FRIENDS ({friends.length})</button>
                                 <button onClick={() => setActiveTab('online')} className={`pb-2 font-bold ${activeTab === 'online' ? 'border-b-2 border-primary text-primary' : 'text-on-surface-variant/50 hover:text-on-surface/70'} transition-all`}>ONLINE ({onlineFriends.length})</button>
                                 <button onClick={() => setActiveTab('offline')} className={`pb-2 font-bold ${activeTab === 'offline' ? 'border-b-2 border-primary text-primary' : 'text-on-surface-variant/50 hover:text-on-surface/70'} transition-all`}>OFFLINE ({offlineFriends.length})</button>
+                                <button onClick={() => setActiveTab('blocked')} className={`pb-2 font-bold ${activeTab === 'blocked' ? 'border-b-2 border-error text-error' : 'text-on-surface-variant/50 hover:text-on-surface/70'} transition-all`}>BLOCKED ({blocked.length})</button>
                             </div>
                             <form onSubmit={handleSearch} className="relative">
                                 <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/50 text-sm">search</span>
@@ -238,6 +239,7 @@ export default function Friends() {
                         {searchError && <p className="text-error text-sm mb-4">{searchError}</p>}
 
                         {/* Friends Grid */}
+                        {activeTab !== 'blocked' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {displayedFriends.map(f => {
                                 const isOnline = f.isOnline;
@@ -285,8 +287,44 @@ export default function Friends() {
                                 );
                             })}
                         </div>
+                        )}
 
-                        {displayedFriends.length === 0 && (
+                        {/* Blocked Users Grid (inline when tab active) */}
+                        {activeTab === 'blocked' && (
+                            <div className="space-y-4">
+                                {blocked.length === 0 ? (
+                                    <div className="text-center py-16">
+                                        <span className="material-symbols-outlined text-5xl text-on-surface-variant/20 mb-4 block">shield</span>
+                                        <p className="text-on-surface-variant/50 font-body">No blocked users. Your orbit is clear!</p>
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {blocked.map(b => (
+                                            <div key={b.id} className="glass-panel p-5 rounded-2xl border border-error/10 group hover:bg-surface-container-high/40 transition-all">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="w-14 h-14 rounded-2xl bg-surface-container-highest flex items-center justify-center text-xl font-bold text-error/60 grayscale overflow-hidden">
+                                                        {b.avatar ? (
+                                                            <img alt={b.nickname} className="w-full h-full object-cover opacity-50" src={b.avatar} />
+                                                        ) : (
+                                                            <span className="material-symbols-outlined text-2xl">person_off</span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <h4 className="font-bold text-on-surface/70">{b.nickname}</h4>
+                                                        <p className="text-[10px] text-on-surface-variant/40 uppercase tracking-widest">@{b.username}</p>
+                                                    </div>
+                                                    <button onClick={() => unblockUser(b.id)} className="px-4 py-2 rounded-xl bg-error/10 text-error text-xs font-bold hover:bg-error hover:text-on-error transition-all active:scale-95">
+                                                        Unblock
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {activeTab !== 'blocked' && displayedFriends.length === 0 && (
                             <div className="text-center py-16">
                                 <span className="material-symbols-outlined text-5xl text-on-surface-variant/20 mb-4 block">group</span>
                                 <p className="text-on-surface-variant/50 font-body">No friends to display. Search to add new allies!</p>
@@ -302,6 +340,18 @@ export default function Friends() {
                             <div className="flex items-center gap-3">
                                 <div className="w-3 h-3 rounded-full bg-on-surface-variant/30"></div>
                                 <span className="font-label text-sm text-on-surface-variant/50 tracking-widest uppercase">{offlineFriends.length} drifting in void</span>
+                            </div>
+                            <div className="ml-auto flex -space-x-3 hidden sm:flex">
+                                {onlineFriends.slice(0, 3).map((f, i) => (
+                                    <div key={i} className="w-8 h-8 rounded-full border-2 border-surface-container bg-surface-container-highest flex items-center justify-center overflow-hidden">
+                                        {f.avatar ? <img className="w-full h-full object-cover" src={f.avatar} alt="friend" /> : <span className="text-xs font-bold text-primary">{f.nickname.charAt(0).toUpperCase()}</span>}
+                                    </div>
+                                ))}
+                                {onlineFriends.length > 3 && (
+                                    <div className="w-8 h-8 rounded-full border-2 border-surface-container bg-surface-container-highest flex items-center justify-center text-[10px] font-bold text-primary">
+                                        +{onlineFriends.length - 3}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </section>

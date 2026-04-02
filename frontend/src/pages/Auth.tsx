@@ -299,7 +299,7 @@ export default function Auth() {
                                             maxLength={1}
                                             className="w-12 h-14 bg-surface-container-lowest border border-transparent rounded-lg text-center text-xl font-bold text-white focus:border-primary focus:ring-1 focus:ring-primary transition-all outline-none"
                                             value={val}
-                                            ref={el => otpRefs.current[idx] = el}
+                                            ref={el => { otpRefs.current[idx] = el; }}
                                             onChange={e => handleOtpChange(idx, e.target.value)}
                                             onKeyDown={e => handleOtpKeyDown(idx, e)}
                                         />

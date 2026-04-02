@@ -203,6 +203,36 @@ router.post('/forgot-password', async (req, res) => {
     }
 });
 
+router.post('/guest', async (req, res) => {
+    const { device_id } = req.body;
+    if (!device_id) return res.status(400).json({ error: 'Device ID required' });
+
+    try {
+        const fakeEmail = `${device_id}@guest.com`;
+        
+        let result = await db.query('SELECT * FROM Users WHERE username = $1 OR email = $2', [device_id, fakeEmail]);
+        
+        let user;
+        if (result.rows.length === 0) {
+            const insertResult = await db.query(
+                "INSERT INTO Users (email, username, password_hash, nickname, is_verified) VALUES ($1, $2, $3, $4, 1) RETURNING id, username, email, nickname, avatar, xp, rank_level, total_wins, total_games, coins",
+                [fakeEmail, device_id, 'guest_pass_hash', 'Guest_' + Math.floor(Math.random() * 9999)]
+            );
+            user = insertResult.rows[0];
+            user.isGuest = true;
+        } else {
+            user = result.rows[0];
+            user.isGuest = true;
+        }
+
+        const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '1d' });
+        res.json({ token, user });
+    } catch (err) {
+        console.error("Guest login error:", err);
+        res.status(500).json({ error: 'Server error during guest login' });
+    }
+});
+
 router.post('/reset-password', async (req, res) => {
     const { email, otp, newPassword } = req.body;
     if (!email || !otp || !newPassword) return res.status(400).json({ error: 'Missing required fields' });
@@ -461,6 +491,28 @@ router.post('/guest', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Server error' });
+    }
+});
+
+router.get('/refresh', (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
+    const token = authHeader.split(' ')[1];
+    
+    try {
+        // Decode ignoring expiration to issue a fresh one
+        const decoded = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
+        if (!decoded || !decoded.id) return res.status(401).json({ error: 'Invalid token payload' });
+
+        const newToken = jwt.sign(
+            { id: decoded.id, username: decoded.username, nickname: decoded.nickname, isGuest: decoded.isGuest },
+            process.env.JWT_SECRET,
+            { expiresIn: '7d' } // Refresh active timeline
+        );
+
+        res.json({ success: true, token: newToken });
+    } catch(err) {
+        res.status(401).json({ error: 'Invalid token' });
     }
 });
 

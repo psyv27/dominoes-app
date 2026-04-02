@@ -130,6 +130,19 @@ export default function Inventory() {
                     )}
                 </div>
             </div>
+
+            {/* Notification Toast */}
+            {window.location.search.includes('quest') && (
+                <div className="fixed bottom-10 right-10 z-[70] glass-panel p-4 rounded-xl border border-primary/20 gold-glow flex items-center gap-4 max-w-xs transition-all animate-pulse pointer-events-none">
+                    <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary">
+                        <span className="material-symbols-outlined">info</span>
+                    </div>
+                    <div>
+                        <p className="text-xs font-bold uppercase tracking-widest text-primary mb-1">New Item Found</p>
+                        <p className="text-sm text-on-surface">You received "Cyber Flux Emote" from the Daily Quest!</p>
+                    </div>
+                </div>
+            )}
         </DashboardLayout>
     );
 }

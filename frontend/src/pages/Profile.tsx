@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { User, KeyRound, Image as ImageIcon, ArrowLeft, Save, Trophy, Coins, Target } from 'lucide-react';
+import DashboardLayout from '../components/DashboardLayout';
 import './Profile.css';
 
 export default function Profile() {
@@ -57,14 +58,9 @@ export default function Profile() {
     };
 
     return (
-        <div className="profile-container">
-            <div className="profile-header">
-                <button className="back-btn" onClick={() => navigate('/lobby')}>
-                    <ArrowLeft size={20} /> Back to Lobby
-                </button>
-            </div>
-
-            <div className="profile-content">
+        <DashboardLayout activePage="Profile">
+            <div className="profile-container" style={{ paddingTop: '2rem' }}>
+                <div className="profile-content">
                 <div className="profile-stats-panel" style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '20px', borderRadius: '12px', marginBottom: '20px', display: 'flex', gap: '20px', justifyContent: 'space-around', color: '#fff' }}>
                     <div style={{ textAlign: 'center' }}>
                         <Coins size={32} color="#f5a623" />
@@ -141,6 +137,7 @@ export default function Profile() {
                     </form>
                 </div>
             </div>
-        </div>
+            </div>
+        </DashboardLayout>
     );
 }

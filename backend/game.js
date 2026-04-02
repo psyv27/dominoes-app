@@ -460,8 +460,8 @@ class DominoGame {
         const validMoves = this.getValidMoves(this.players[socketId].hand);
         if (validMoves.length > 0) return { error: 'You have valid moves, cannot draw' };
 
-        // Boneyard empty → pass
-        if (this.deck.length === 0) {
+        // Block mode or Boneyard empty -> pass without drawing
+        if (this.gameMode === 'Block' || this.deck.length === 0) {
             const openEnds = this.getOpenEnds();
             this._turnMgr.recordPass(socketId, openEnds);
             if (!this.passTracking[socketId]) this.passTracking[socketId] = [];

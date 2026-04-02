@@ -8,6 +8,8 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
+const storeRoutes = require('./routes/store');
+const tournamentRoutes = require('./routes/tournaments');
 const RoomManager = require('./RoomManager');
 const DominoGame = require('./game');
 const BotAI = require('./BotAI');
@@ -22,7 +24,6 @@ app.use(cors());
 app.use((req, res, next) => {
     res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
-    console.log(`${req.method} ${req.url}`);
     next();
 });
 
@@ -32,6 +33,8 @@ app.use(express.json());
 
 app.use('/auth', authRoutes);
 app.use('/admin', adminRoutes);
+app.use('/store', storeRoutes);
+app.use('/tournaments', tournamentRoutes);
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
@@ -443,11 +446,25 @@ function executeBotTurn(roomId, botId) {
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
     
-    // Register user ID for presence/invites
+    // Register user ID for presence/invites and handles reconnects
     socket.on('registerUser', (userId) => {
         if (userId) {
             userSocketMap[userId] = socket.id;
             socketUserMap[socket.id] = userId;
+            
+            // Reconnect logic
+            const reconnectResult = roomManager.reconnectPlayer(socket.id, userId);
+            if (reconnectResult && reconnectResult.success) {
+                const room = reconnectResult.room;
+                socket.join(room.id);
+                // Inform others that player reconnected natively
+                io.to(room.id).emit('roomUpdated', room);
+                // Sync them exactly into the board natively
+                socket.emit('roomJoined', room);
+                if (room.state === 'playing') {
+                    socket.emit('gameState', GameStateSerializer.serializeForPlayer(room.game, room, socket.id));
+                }
+            }
         }
     });
 
@@ -531,7 +548,15 @@ io.on('connection', (socket) => {
         const roomId = createResult.roomId;
         const result = roomManager.joinRoom(roomId, socket.id, data.playerDetails);
         socket.join(roomId);
+        
+        // Dynamically populate bots if botMode is defined and botCount is given
+        if (data.settings.botMode && data.settings.botCount > 0) {
+            roomManager.addBots(roomId, data.settings.botCount, data.settings.botDifficulty || 'normal');
+            botInstances[roomId] = new BotAI(data.settings.botDifficulty || 'normal');
+        }
+
         io.emit('roomsUpdated', roomManager.getPublicRooms());
+        // Yield room payload natively to standard handler avoiding secondary join trips
         socket.emit('roomJoined', result.room);
     });
 
@@ -903,8 +928,34 @@ io.on('connection', (socket) => {
             delete socketUserMap[socket.id];
         }
 
-        const result = roomManager.leaveRoom(socket.id);
+        // START 60 SECONDS GRACE PERIOD INSTEAD OF INSTANT LEAVE
+        const result = roomManager.startDisconnectGracePeriod(socket.id, (kickResult, oldSocketId) => {
+            // When timer expires without reconnect, broadcast natively
+            const { room, destroyed, aborted } = kickResult;
+            clearTurnTimer(room.id);
+            delete botInstances[room.id];
+
+            if (destroyed) {
+                io.to(room.id).emit('roomDestroyed', 'The host has left or room is empty. Room destroyed.');
+                io.in(room.id).socketsLeave(room.id);
+            } else if (aborted) {
+                io.to(room.id).emit('matchAborted', 'A player disconnected permanently. The match has been aborted.');
+                io.to(room.id).emit('roomUpdated', room);
+            } else {
+                io.to(room.id).emit('roomUpdated', room);
+            }
+            io.emit('roomsUpdated', roomManager.getPublicRooms());
+        });
+        
         if (result && result.room) {
+            // If the game is actively playing, startDisconnectGracePeriod returns { room, gracePeriodStarted: true }
+            if (result.gracePeriodStarted) {
+                io.to(result.room.id).emit('playerDisconnectedAlert', { 
+                    message: 'A player has disconnected. Waiting 60 seconds for them to reconnect...' 
+                });
+                return;
+            }
+
             const { room, destroyed, aborted } = result;
             clearTurnTimer(room.id);
             delete botInstances[room.id];
@@ -913,7 +964,7 @@ io.on('connection', (socket) => {
                 io.to(room.id).emit('roomDestroyed', 'The host has left or room is empty. Room destroyed.');
                 io.in(room.id).socketsLeave(room.id);
             } else if (aborted) {
-                io.to(room.id).emit('matchAborted', 'A player disconnected. The match has been aborted.');
+                io.to(room.id).emit('matchAborted', 'A player disconnected permanently. The match has been aborted.');
                 io.to(room.id).emit('roomUpdated', room);
             } else {
                 io.to(room.id).emit('roomUpdated', room);
