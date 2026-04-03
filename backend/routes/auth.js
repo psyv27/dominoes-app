@@ -209,9 +209,9 @@ router.post('/guest', async (req, res) => {
 
     try {
         const fakeEmail = `${device_id}@guest.com`;
-        
+
         let result = await db.query('SELECT * FROM Users WHERE username = $1 OR email = $2', [device_id, fakeEmail]);
-        
+
         let user;
         if (result.rows.length === 0) {
             const insertResult = await db.query(
@@ -272,7 +272,7 @@ router.get('/me', async (req, res) => {
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         const result = await db.query('SELECT id, username, nickname, avatar, xp, rank_level, total_wins, total_games FROM Users WHERE id = $1', [decoded.id]);
-        
+
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'User not found' });
         }
@@ -295,7 +295,7 @@ router.put('/profile', async (req, res) => {
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         const userCheck = await db.query('SELECT * FROM Users WHERE id = $1', [decoded.id]);
-        
+
         if (userCheck.rows.length === 0) {
             return res.status(404).json({ error: 'User not found' });
         }
@@ -346,14 +346,14 @@ router.get('/social', (req, res) => {
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         const userId = decoded.id;
-        
+
         res.json({
             friends: db.getFriends(userId),
             pendingRequests: db.getPendingRequests(userId),
             sentRequests: db.getSentRequests(userId),
             blocked: db.getBlockedByUser(userId)
         });
-    } catch(err) {
+    } catch (err) {
         res.status(401).json({ error: 'Invalid token' });
     }
 });
@@ -367,16 +367,16 @@ router.post('/friend-request', (req, res) => {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         const { toId } = req.body;
         if (!toId || toId === decoded.id) return res.status(400).json({ error: 'Invalid target' });
-        
+
         // FAST-FAIL GUARD: Check if Target is a Bot
         if (String(toId).startsWith('bot-')) {
             return res.status(400).json({ error: 'Cannot interact with bots' });
         }
-        
+
         const result = db.sendFriendRequest(decoded.id, toId);
         if (result.error) return res.status(400).json(result);
         res.json(result);
-    } catch(err) {
+    } catch (err) {
         res.status(401).json({ error: 'Invalid token' });
     }
 });
@@ -389,7 +389,7 @@ router.post('/friend-request/:id/accept', (req, res) => {
         const result = db.acceptFriendRequest(req.params.id);
         if (result.error) return res.status(400).json(result);
         res.json(result);
-    } catch(err) {
+    } catch (err) {
         res.status(401).json({ error: 'Invalid token' });
     }
 });
@@ -402,7 +402,7 @@ router.delete('/friend-request/:id', (req, res) => {
         const result = db.rejectFriendRequest(req.params.id);
         if (result.error) return res.status(400).json(result);
         res.json(result);
-    } catch(err) {
+    } catch (err) {
         res.status(401).json({ error: 'Invalid token' });
     }
 });
@@ -417,7 +417,7 @@ router.delete('/friends/:id', (req, res) => {
         const result = db.removeFriend(decoded.id, req.params.id);
         if (result.error) return res.status(400).json(result);
         res.json(result);
-    } catch(err) {
+    } catch (err) {
         res.status(401).json({ error: 'Invalid token' });
     }
 });
@@ -431,16 +431,16 @@ router.post('/block', (req, res) => {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         const { blockedId } = req.body;
         if (!blockedId || blockedId === decoded.id) return res.status(400).json({ error: 'Invalid target' });
-        
+
         // FAST-FAIL GUARD: Check if Target is a Bot
         if (String(blockedId).startsWith('bot-')) {
             return res.status(400).json({ error: 'Cannot interact with bots' });
         }
-        
+
         const result = db.blockUser(decoded.id, blockedId);
         if (result.error) return res.status(400).json(result);
         res.json(result);
-    } catch(err) {
+    } catch (err) {
         res.status(401).json({ error: 'Invalid token' });
     }
 });
@@ -455,7 +455,7 @@ router.delete('/block/:id', (req, res) => {
         const result = db.unblockUser(decoded.id, req.params.id);
         if (result.error) return res.status(400).json(result);
         res.json(result);
-    } catch(err) {
+    } catch (err) {
         res.status(401).json({ error: 'Invalid token' });
     }
 });
@@ -498,7 +498,7 @@ router.get('/refresh', (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
     const token = authHeader.split(' ')[1];
-    
+
     try {
         // Decode ignoring expiration to issue a fresh one
         const decoded = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
@@ -511,7 +511,7 @@ router.get('/refresh', (req, res) => {
         );
 
         res.json({ success: true, token: newToken });
-    } catch(err) {
+    } catch (err) {
         res.status(401).json({ error: 'Invalid token' });
     }
 });
@@ -537,7 +537,7 @@ router.post('/rewards/daily', async (req, res) => {
             [decoded.id]
         );
         res.json({ success: true, coins: result.rows[0].coins });
-    } catch(err) {
+    } catch (err) {
         res.status(401).json({ error: 'Invalid token' });
     }
 });
@@ -557,7 +557,35 @@ router.post('/rewards/ad', async (req, res) => {
 
         const result = await db.query("UPDATE Users SET coins = coins + 50 WHERE id = $1 RETURNING coins", [decoded.id]);
         res.json({ success: true, coins: result.rows[0].coins });
-    } catch(err) {
+    } catch (err) {
+        res.status(401).json({ error: 'Invalid token' });
+    }
+});
+
+module.exports = router;
+        );
+res.json({ success: true, coins: result.rows[0].coins });
+    } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+}
+});
+
+router.post('/rewards/ad', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+    const token = authHeader.split(' ')[1];
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const userCheck = await db.query('SELECT is_guest, coins FROM Users WHERE id = $1', [decoded.id]);
+        if (userCheck.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+
+        const user = userCheck.rows[0];
+        if (user.is_guest) return res.status(403).json({ error: 'Guests cannot claim ad rewards' });
+        if (user.coins >= 20) return res.status(400).json({ error: 'Coins must be less than 20 to claim an ad reward' });
+
+        const result = await db.query("UPDATE Users SET coins = coins + 50 WHERE id = $1 RETURNING coins", [decoded.id]);
+        res.json({ success: true, coins: result.rows[0].coins });
+    } catch (err) {
         res.status(401).json({ error: 'Invalid token' });
     }
 });
